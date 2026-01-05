@@ -16,7 +16,7 @@ module BPC.API.Middleware.Policy
   , policyMiddleware
   ) where
 
-import Control.Monad (forM_)
+import Control.Monad (forM_, void)
 import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (asks)
@@ -107,8 +107,6 @@ logDeniedAccess ctx resource action reason = do
       }
     -- In real impl, would emit audit event
     pure ()
-  where
-    void = const ()
 
 -- | Policy middleware.
 --
