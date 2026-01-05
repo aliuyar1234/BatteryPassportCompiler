@@ -205,11 +205,9 @@ routeRequest env method path request = do
         Just verId -> runHandlerBS env $ Documents.getDocumentVersionContent mockAuthCtx verId
 
     -- Passports
-    ("POST", ["v1", "passports"]) -> do
-      body <- strictRequestBody request
-      case Aeson.decode body of
-        Nothing -> pure $ jsonError status400 "INVALID_JSON" "Invalid request body"
-        Just req -> runHandler env $ Passports.createPassport mockAuthCtx req
+    -- TODO: createPassport expects UUID (battery_product_id), need proper request handling
+    ("POST", ["v1", "passports"]) ->
+      pure $ jsonError status501 "NOT_IMPLEMENTED" "Create passport requires battery_product_id in body"
 
     ("GET", ["v1", "passports"]) ->
       runHandler env $ Passports.listPassports mockAuthCtx defaultPagination
@@ -219,21 +217,18 @@ routeRequest env method path request = do
         Nothing -> pure $ jsonError status400 "INVALID_UUID" "Invalid passport ID"
         Just pId -> runHandler env $ Passports.getPassport mockAuthCtx pId
 
-    ("POST", ["v1", "passports", idText, "compile"]) ->
-      case UUID.fromText idText of
-        Nothing -> pure $ jsonError status400 "INVALID_UUID" "Invalid passport ID"
-        Just pId -> runHandler env $ Passports.compilePassport mockAuthCtx pId
+    -- TODO: compilePassport expects passport_id, snapshot_id, rules_version_id
+    ("POST", ["v1", "passports", _idText, "compile"]) ->
+      pure $ jsonError status501 "NOT_IMPLEMENTED" "Compile passport requires snapshot_id and rules_version_id in body"
 
     -- TODO: implement Passports.listPassportVersions
     ("GET", ["v1", "passports", _idText, "versions"]) ->
       pure $ jsonError status501 "NOT_IMPLEMENTED" "List passport versions not implemented"
 
     -- Snapshots
-    ("POST", ["v1", "snapshots"]) -> do
-      body <- strictRequestBody request
-      case Aeson.decode body of
-        Nothing -> pure $ jsonError status400 "INVALID_JSON" "Invalid request body"
-        Just req -> runHandler env $ Snapshots.createSnapshot mockAuthCtx req
+    -- TODO: createSnapshot expects Maybe Text (description), need proper request type
+    ("POST", ["v1", "snapshots"]) ->
+      pure $ jsonError status501 "NOT_IMPLEMENTED" "Create snapshot requires description in body"
 
     ("GET", ["v1", "snapshots"]) ->
       runHandler env $ Snapshots.listSnapshots mockAuthCtx defaultPagination
@@ -249,24 +244,21 @@ routeRequest env method path request = do
         Just sId -> runHandler env $ Snapshots.sealSnapshot mockAuthCtx sId
 
     -- Facts
-    ("POST", ["v1", "facts"]) -> do
-      body <- strictRequestBody request
-      case Aeson.decode body of
-        Nothing -> pure $ jsonError status400 "INVALID_JSON" "Invalid request body"
-        Just req -> runHandler env $ Facts.createFact mockAuthCtx req
+    -- TODO: createFact expects fact_type, fact_key, payload as separate args
+    ("POST", ["v1", "facts"]) ->
+      pure $ jsonError status501 "NOT_IMPLEMENTED" "Create fact requires fact_type, fact_key, payload in body"
 
+    -- TODO: listFacts requires fact_type query param
     ("GET", ["v1", "facts"]) ->
-      runHandler env $ Facts.listFacts mockAuthCtx defaultPagination
+      pure $ jsonError status501 "NOT_IMPLEMENTED" "List facts requires fact_type query param"
 
     ("GET", ["v1", "facts", factType, factKey]) ->
       runHandler env $ Facts.getFact mockAuthCtx factType factKey
 
     -- Rules
-    ("POST", ["v1", "rule-packages"]) -> do
-      body <- strictRequestBody request
-      case Aeson.decode body of
-        Nothing -> pure $ jsonError status400 "INVALID_JSON" "Invalid request body"
-        Just req -> runHandler env $ Rules.createRulePackage mockAuthCtx req
+    -- TODO: createRulePackage expects name: Text, description: Maybe Text
+    ("POST", ["v1", "rule-packages"]) ->
+      pure $ jsonError status501 "NOT_IMPLEMENTED" "Create rule package requires name and description in body"
 
     ("GET", ["v1", "rule-packages"]) ->
       runHandler env $ Rules.listRulePackages mockAuthCtx defaultPagination

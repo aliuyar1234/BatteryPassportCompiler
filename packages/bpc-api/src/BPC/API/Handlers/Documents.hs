@@ -17,7 +17,8 @@ module BPC.API.Handlers.Documents
 
 import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
-import Data.Aeson (ToJSON(..), object, (.=))
+import Data.Aeson (ToJSON(..), FromJSON(..), object, (.=), (.:), (.:?))
+import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -40,6 +41,12 @@ data CreateDocumentRequest = CreateDocumentRequest
   , cdrMetadata :: Maybe Text
   }
   deriving stock (Show, Eq, Generic)
+
+instance FromJSON CreateDocumentRequest where
+  parseJSON = Aeson.withObject "CreateDocumentRequest" $ \o -> CreateDocumentRequest
+    <$> o .: "name"
+    <*> o .: "mime_type"
+    <*> o .:? "metadata"
 
 -- | Document response.
 data DocumentResponse = DocumentResponse

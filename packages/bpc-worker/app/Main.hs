@@ -58,4 +58,5 @@ loadDbConfig = do
     , DB.dbPassword = T.pack password
     , DB.dbPoolSize = poolSize
     , DB.dbPoolTimeout = 30
+    , DB.dbConnectTimeout = 10
     }
