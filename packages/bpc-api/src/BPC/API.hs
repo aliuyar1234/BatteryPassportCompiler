@@ -41,13 +41,4 @@ runServer env = do
   putStrLn $ "Starting BPC API server on port " ++ show (envPort env)
   run (envPort env) (app env)
 
--- | Create environment from configuration.
---
--- @since 0.1.0.0
-mkEnv :: Pool Connection -> Int -> Text -> IO Env
-mkEnv pool port pepper = pure Env
-  { envPool = pool
-  , envPort = port
-  , envApiKeyPepper = pepper
-  , envCorrelationId = Nothing
-  }
+-- Note: mkEnv is re-exported from BPC.API.App
