@@ -22,12 +22,14 @@ import Control.Monad.IO.Class (liftIO)
 import Crypto.Hash (SHA256(..), hashWith)
 import Data.Aeson (Value, object, (.=))
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Key as AesonKey
 import qualified Data.Aeson.KeyMap as KM
 import Data.ByteArray (convert)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.CaseInsensitive as CI
 import Data.IORef (IORef, newIORef, readIORef, writeIORef, modifyIORef)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -45,8 +47,8 @@ import BPC.API.Error (AppError(..))
 import BPC.DB.Repos.Idempotency (lookupIdempotencyKey, storeIdempotencyKey, IdempotencyEntry(..))
 
 -- | Header name for idempotency key.
-idempotencyKeyHeader :: BS.ByteString
-idempotencyKeyHeader = "Idempotency-Key"
+idempotencyKeyHeader :: CI.CI BS.ByteString
+idempotencyKeyHeader = CI.mk "Idempotency-Key"
 
 -- | Idempotency middleware.
 --
@@ -76,21 +78,21 @@ handleIdempotent :: Env -> Middleware
 handleIdempotent env app req respond = do
   case lookup idempotencyKeyHeader (requestHeaders req) of
     Nothing -> respond $ responseLBS status422
-      [("Content-Type", "application/json")]
+      [(CI.mk "Content-Type", "application/json")]
       "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Idempotency-Key header is required for mutating requests\"}}"
 
     Just idempotencyKeyBS -> do
       -- Extract tenant ID (in production, this comes from auth context)
       -- For now, require X-Tenant-ID header
-      case lookup "X-Tenant-ID" (requestHeaders req) of
+      case lookup (CI.mk "X-Tenant-ID") (requestHeaders req) of
         Nothing -> respond $ responseLBS status422
-          [("Content-Type", "application/json")]
+          [(CI.mk "Content-Type", "application/json")]
           "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"X-Tenant-ID header is required\"}}"
 
         Just tenantIdBS -> do
           case Aeson.decode (LBS.fromStrict tenantIdBS) of
             Nothing -> respond $ responseLBS status422
-              [("Content-Type", "application/json")]
+              [(CI.mk "Content-Type", "application/json")]
               "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Invalid X-Tenant-ID format\"}}"
 
             Just tenantId -> do
@@ -112,7 +114,7 @@ handleIdempotent env app req respond = do
                   if ieRequestHash entry == requestHash
                     then do
                       -- Request hash matches, replay response
-                      let headers = jsonToHeaders (ieResponseHeaders entry)
+                      let headers = [(CI.mk k, v) | (k, v) <- jsonToHeaders (ieResponseHeaders entry)]
                       respond $ responseLBS
                         (toEnum $ ieResponseStatus entry)
                         headers
@@ -120,7 +122,7 @@ handleIdempotent env app req respond = do
                     else do
                       -- Request hash mismatch, return conflict
                       respond $ responseLBS status409
-                        [("Content-Type", "application/json")]
+                        [(CI.mk "Content-Type", "application/json")]
                         (Aeson.encode $ object
                           [ "error" .= object
                             [ "code" .= ("IDEMPOTENCY_CONFLICT" :: Text)
@@ -196,7 +198,7 @@ hashText text =
 --
 -- Note: This is a simplified implementation that works for responseLBS.
 -- For streaming responses, we would need more complex buffering.
-captureResponse :: Response -> IO (Status, [(BS.ByteString, BS.ByteString)], LBS.ByteString)
+captureResponse :: Response -> IO (Status, [(CI.CI BS.ByteString, BS.ByteString)], LBS.ByteString)
 captureResponse response = do
   let status = responseStatus response
   let headers = responseHeaders response
@@ -214,16 +216,16 @@ captureResponse response = do
   pure (status, headers, body)
 
 -- | Convert headers to JSON Value.
-headersToJson :: [(BS.ByteString, BS.ByteString)] -> Value
+headersToJson :: [(CI.CI BS.ByteString, BS.ByteString)] -> Value
 headersToJson headers = object
-  [ TE.decodeUtf8 k .= TE.decodeUtf8 v
+  [ AesonKey.fromText (TE.decodeUtf8 (CI.original k)) .= TE.decodeUtf8 v
   | (k, v) <- headers
   ]
 
 -- | Convert JSON Value to headers.
 jsonToHeaders :: Value -> [(BS.ByteString, BS.ByteString)]
 jsonToHeaders (Aeson.Object obj) =
-  [ (TE.encodeUtf8 k, TE.encodeUtf8 v)
+  [ (TE.encodeUtf8 (AesonKey.toText k), TE.encodeUtf8 v)
   | (k, Aeson.String v) <- KM.toList obj
   ]
 jsonToHeaders _ = [("Content-Type", "application/json")]

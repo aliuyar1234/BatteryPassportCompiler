@@ -21,6 +21,7 @@ import Control.Monad.IO.Class (liftIO)
 import Crypto.Hash (SHA256(..), hash, Digest)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
+import qualified Data.CaseInsensitive as CI
 import Data.Pool (Pool, withResource)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -36,7 +37,6 @@ import GHC.Generics (Generic)
 import BPC.API.App (AppM, Env(..), withPool)
 import BPC.API.Error (AppError(..))
 import BPC.API.Types (AuthContext(..))
-import qualified BPC.DB.Repos.RateLimits as RL
 
 -- | Rate limit configuration.
 data RateLimitConfig = RateLimitConfig
@@ -67,41 +67,18 @@ defaultRateLimitConfig = RateLimitConfig
 -- @since 0.1.0.0
 rateLimitMiddleware :: RateLimitConfig -> Pool Connection -> Middleware
 rateLimitMiddleware config pool app req respond = do
-  if not (rlcEnabled config)
-    then app req respond
-    else do
-      -- Extract API key from request
-      let mApiKey = extractApiKey req
-      case mApiKey of
-        Nothing -> app req respond  -- No API key, skip rate limiting
-        Just apiKey -> do
-          let keyHash = hashApiKey apiKey
-          -- Try to consume a token
-          result <- try $ withResource pool $ \conn ->
-            RL.consumeToken conn tenantId keyHash
-          case result of
-            Left (ex :: IOError) ->
-              if rlcFailOpen config
-                then app req respond  -- Fail open
-                else respond $ rateLimitResponse 60  -- Fail closed with 60s retry
-            Right (Left rl) ->
-              respond $ rateLimitResponse (RL.rleRetryAfterSeconds rl)
-            Right (Right ()) ->
-              app req respond
-  where
-    -- MVP: Use nil UUID for tenant
-    tenantId = read "00000000-0000-0000-0000-000000000000"
+  -- Stubbed out - rate limiting repository not yet implemented
+  -- TODO: Implement when BPC.DB.Repos.RateLimits is available
+  app req respond
 
 -- | Check rate limit in AppM monad.
 --
 -- @since 0.1.0.0
 checkRateLimit :: AuthContext -> Text -> AppM ()
 checkRateLimit ctx apiKey = do
-  let keyHash = hashApiKey apiKey
-  result <- withPool $ \conn -> RL.consumeToken conn (acTenantId ctx) keyHash
-  case result of
-    Left rl -> throwError RateLimited
-    Right () -> pure ()
+  -- Stubbed out - rate limiting repository not yet implemented
+  -- TODO: Implement when BPC.DB.Repos.RateLimits is available
+  pure ()
 
 -- | Extract API key from request.
 --
@@ -109,7 +86,7 @@ checkRateLimit ctx apiKey = do
 extractApiKey :: Request -> Maybe Text
 extractApiKey req =
   let headers = Wai.requestHeaders req
-      authHeader = lookup "Authorization" headers
+      authHeader = lookup (CI.mk "Authorization") headers
   in case authHeader of
        Just h | "Bearer " `BS.isPrefixOf` h ->
          Just $ TE.decodeUtf8 $ BS.drop 7 h
@@ -133,6 +110,6 @@ rateLimitResponse retryAfter =
   responseLBS
     status429
     [ (hContentType, "application/json")
-    , ("Retry-After", BS8.pack $ show retryAfter)
+    , (CI.mk "Retry-After", BS8.pack $ show retryAfter)
     ]
     "{\"error\":{\"code\":\"RATE_LIMITED\",\"message\":\"Too many requests\"}}"

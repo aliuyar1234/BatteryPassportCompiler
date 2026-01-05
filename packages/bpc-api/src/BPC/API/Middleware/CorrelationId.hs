@@ -18,6 +18,7 @@ module BPC.API.Middleware.CorrelationId
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS8
+import qualified Data.CaseInsensitive as CI
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
@@ -33,8 +34,8 @@ newtype CorrelationId = CorrelationId { unCorrelationId :: UUID }
   deriving newtype (Ord)
 
 -- | Header name for correlation ID.
-correlationIdHeader :: ByteString
-correlationIdHeader = "X-Correlation-Id"
+correlationIdHeader :: CI.CI ByteString
+correlationIdHeader = CI.mk "X-Correlation-Id"
 
 -- | Correlation ID middleware.
 --

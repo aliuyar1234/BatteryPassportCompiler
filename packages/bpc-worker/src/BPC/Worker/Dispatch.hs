@@ -22,6 +22,7 @@ import GHC.Generics (Generic)
 
 import BPC.Worker.Types
 import qualified BPC.DB as DB
+import qualified BPC.DB.Repos.Jobs as Jobs
 import qualified BPC.Worker.Handlers.ParseFacts as ParseFacts
 import qualified BPC.Worker.Handlers.BuildSnapshot as BuildSnapshot
 import qualified BPC.Worker.Handlers.CompilePassport as CompilePassport
@@ -41,54 +42,29 @@ instance Exception UnsupportedJobType
 
 -- | Dispatch a job to the appropriate handler.
 --
--- @since 0.1.0.0
-dispatchJob :: WorkerConfig -> Pool Connection -> DB.Job -> IO HandlerResult
-dispatchJob config pool job = do
-  let jobType = DB.jobType job
-  case parseJobType jobType of
-    Just JTIngestDocument ->
-      -- Ingest is a no-op in MVP (document already uploaded)
-      pure HRSuccess
-
-    Just JTParseFacts ->
-      ParseFacts.handle config pool job
-
-    Just JTBuildSnapshot ->
-      BuildSnapshot.handle config pool job
-
-    Just JTCompilePassport ->
-      CompilePassport.handle config pool job
-
-    Just JTSignPassport ->
-      SignPassport.handle config pool job
-
-    Just JTGenerateQR ->
-      GenerateQR.handle config pool job
-
-    Just JTExportPassport ->
-      ExportPassport.handle config pool job
-
-    Just JTRunRuleTests ->
-      RunRuleTests.handle config pool job
-
-    Just JTDeliverWebhook ->
-      DeliverWebhook.handle config pool job
-
-    Nothing ->
-      throwIO $ UnsupportedJobType jobType
-
--- | Parse job type from text.
+-- Maps DB job types to their corresponding handlers.
+--
+-- Note: DB.JobType has 6 variants (PARSE, BUILD, COMPILE, SIGN, QR, WEBHOOK)
+-- which map to specific worker handlers.
 --
 -- @since 0.1.0.0
-parseJobType :: Text -> Maybe JobType
-parseJobType t = case t of
-  "INGEST_DOCUMENT" -> Just JTIngestDocument
-  "PARSE_FACTS" -> Just JTParseFacts
-  "BUILD_SNAPSHOT" -> Just JTBuildSnapshot
-  "COMPILE_PASSPORT" -> Just JTCompilePassport
-  "SIGN_PASSPORT" -> Just JTSignPassport
-  "GENERATE_QR" -> Just JTGenerateQR
-  "EXPORT_PASSPORT" -> Just JTExportPassport
-  "RUN_RULE_TESTS" -> Just JTRunRuleTests
-  "DELIVER_WEBHOOK" -> Just JTDeliverWebhook
-  _ -> Nothing
+dispatchJob :: WorkerConfig -> Pool Connection -> Jobs.Job -> IO HandlerResult
+dispatchJob config pool job = do
+  case Jobs.jobType job of
+    Jobs.JobParse ->
+      ParseFacts.handle config pool job
+
+    Jobs.JobBuild ->
+      BuildSnapshot.handle config pool job
+
+    Jobs.JobCompile ->
+      CompilePassport.handle config pool job
+
+    Jobs.JobSign ->
+      SignPassport.handle config pool job
+
+    Jobs.JobQr ->
+      GenerateQR.handle config pool job
+
+    Jobs.JobWebhook ->
+      DeliverWebhook.handle config pool job

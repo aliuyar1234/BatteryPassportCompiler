@@ -23,6 +23,7 @@ import Control.Monad.Reader (asks)
 import Data.Pool (withResource)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
 import Data.UUID (UUID)
 import Network.Wai (Application, Middleware, Request, pathInfo, requestMethod)
 import qualified Network.Wai as Wai
@@ -118,7 +119,7 @@ policyMiddleware :: Middleware
 policyMiddleware app req respond = do
   -- Extract resource and action from request
   let resource = T.intercalate "/" $ Wai.pathInfo req
-  let action = T.decodeUtf8 $ Wai.requestMethod req
+  let action = TE.decodeUtf8 $ Wai.requestMethod req
 
   -- Policy evaluation happens in handler context
   -- This middleware just passes through

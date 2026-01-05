@@ -28,7 +28,9 @@ import Crypto.Hash (SHA256(..), hashWith)
 import Data.ByteArray (convert)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
+import qualified Data.CaseInsensitive as CI
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import qualified Data.Pool
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
@@ -59,23 +61,21 @@ authMiddleware env app req respond = do
       -- Extract and validate token
       case extractBearerToken req of
         Nothing -> respond $ responseLBS status401
-          [("Content-Type", "application/json")]
+          [(CI.mk "Content-Type", "application/json")]
           "{\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"Missing Authorization header\"}}"
 
         Just token -> do
           -- Verify against database
-          result <- withPool (envPool env) $ \conn ->
+          result <- liftIO $ Data.Pool.withResource (envPool env) $ \conn ->
             verifyApiKey conn token
           case result of
             Left _ -> respond $ responseLBS status401
-              [("Content-Type", "application/json")]
+              [(CI.mk "Content-Type", "application/json")]
               "{\"error\":{\"code\":\"API_KEY_INVALID\",\"message\":\"API key is invalid or revoked\"}}"
             Right (tenantId, actorId) -> do
               -- Store auth context in vault or use middleware state
               -- For now, pass through (real implementation would use Vault)
               app req respond
-  where
-    withPool pool action = BPC.DB.withConn pool action
 
 -- | Check if endpoint is public (no auth required).
 --
@@ -104,7 +104,7 @@ isPublicEndpoint req =
 -- @since 0.1.0.0
 extractBearerToken :: Request -> Maybe Text
 extractBearerToken req = do
-  authHeader <- lookup "Authorization" (requestHeaders req)
+  authHeader <- lookup (CI.mk "Authorization") (requestHeaders req)
   case BS8.words authHeader of
     ["Bearer", token] -> Just $ TE.decodeUtf8 token
     _ -> Nothing
