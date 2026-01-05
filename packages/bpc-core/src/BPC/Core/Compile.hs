@@ -39,7 +39,7 @@ import BPC.Core.Proof (Proof, buildProof, ProofNode)
 import BPC.Core.Receipt (ReceiptUnsigned, buildReceiptUnsigned, ReceiptInput (..))
 import BPC.Core.Rules.AST (Module)
 import BPC.Core.Rules.Eval (Value, evalModule, emptyContext, withFacts)
-import BPC.Core.Rules.Error (EvalError, CycleError)
+import BPC.Core.Rules.Error (EvalError, CycleError(..))
 import BPC.Core.Rules.Graph (topoSortFields, buildGraph)
 
 import qualified Data.Aeson as Aeson
@@ -225,7 +225,3 @@ buildReceiptCanonical :: ReceiptUnsigned -> Either CompileError ByteString
 buildReceiptCanonical receipt = case canonicalEncode (Aeson.toJSON receipt) of
   Left _ -> Left $ CanonicalEncodingFailed "receipt encoding failed"
   Right bs -> Right bs
-
--- Helper for cycle error fields
-cycleFields :: CycleError -> [Text]
-cycleFields (BPC.Core.Rules.Graph.CycleError fields) = fields
