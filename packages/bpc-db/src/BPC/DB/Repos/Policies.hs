@@ -41,6 +41,7 @@ import Database.PostgreSQL.Simple
 import Database.PostgreSQL.Simple.FromRow
 import Database.PostgreSQL.Simple.ToField
 import Database.PostgreSQL.Simple.ToRow
+import Database.PostgreSQL.Simple.Types (PGArray(..))
 import GHC.Generics (Generic)
 
 import BPC.DB.Error
@@ -187,7 +188,7 @@ createPolicyVersion conn tenantId policyId PolicyVersionInput{..} = do
     \(policy_id, tenant_id, version, policy_hash, rules, effect, resources, actions, conditions) \
     \VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
     (policyId, tenantId, nextVersion :: Int, policyHash, pviRules
-    , effectToText pviEffect, pviResources, pviActions, pviConditions)
+    , effectToText pviEffect, PGArray pviResources, PGArray pviActions, pviConditions)
   pure versionId
 
 -- | Get a policy version by ID.
@@ -255,9 +256,9 @@ textToEffect "ALLOW" = Allow
 textToEffect "DENY" = Deny
 textToEffect _ = Deny  -- Default to deny for safety
 
-rowToPolicyVersion :: (UUID, UUID, UUID, Int, Text, Value, Text, [Text], [Text], Maybe Value, Bool, UTCTime) -> PolicyVersion
+rowToPolicyVersion :: (UUID, UUID, UUID, Int, Text, Value, Text, PGArray Text, PGArray Text, Maybe Value, Bool, UTCTime) -> PolicyVersion
 rowToPolicyVersion (id', policyId, tenantId, version, hash, rules, effect, resources, actions, conditions, isActive, createdAt) =
-  PolicyVersion id' policyId tenantId version hash rules (textToEffect effect) resources actions conditions isActive createdAt
+  PolicyVersion id' policyId tenantId version hash rules (textToEffect effect) (fromPGArray resources) (fromPGArray actions) conditions isActive createdAt
 
 computeHash :: BS.ByteString -> Text
 computeHash bs = T.pack $ show bs  -- MVP: simple hash, real impl would use SHA-256
