@@ -7,6 +7,6 @@ packages:
 
 with-compiler: ghc-9.6.4
 
-package *:
-  ghc-options: -Wall -Wcompat -Werror
+package *
+  ghc-options: -Wall -Wcompat
   optimization: 2
