@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, develop]
+  pull_request:
+    branches: [master, main, develop]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.4'
+          cabal-version: 'latest'
+          enable-stack: false
+
+      - name: Cache Cabal store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/store
+            ~/.cabal/packages
+            dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Build dependencies
+        run: cabal build --only-dependencies all
+
+      - name: Build project
+        run: cabal build all
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            dist-newstyle/build/**/**/bpc-api
+            dist-newstyle/build/**/**/bpc-worker
+          retention-days: 1
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: bpc
+          POSTGRES_USER: bpc
+          POSTGRES_DB: bpc
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      rabbitmq:
+        image: rabbitmq:3-management
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5672:5672
+          - 15672:15672
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.4'
+          cabal-version: 'latest'
+          enable-stack: false
+
+      - name: Cache Cabal store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/store
+            ~/.cabal/packages
+            dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Install dbmate
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64
+          sudo chmod +x /usr/local/bin/dbmate
+
+      - name: Run database migrations
+        run: ./scripts/migrate.sh
+        env:
+          DATABASE_URL: postgres://bpc:bpc@localhost:5432/bpc?sslmode=disable
+
+      - name: Run all tests
+        run: cabal test all
+        env:
+          DATABASE_URL: postgres://bpc:bpc@localhost:5432/bpc?sslmode=disable
+          RABBITMQ_URL: amqp://guest:guest@localhost:5672
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.4'
+          cabal-version: 'latest'
+          enable-stack: false
+
+      - name: Cache Cabal store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/store
+            ~/.cabal/packages
+            dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Install fourmolu
+        run: cabal install fourmolu --overwrite-policy=always
+
+      - name: Check formatting with fourmolu
+        run: |
+          export PATH=$HOME/.cabal/bin:$PATH
+          fourmolu -m check $(git ls-files '*.hs')
+
+      - name: Install HLint
+        run: cabal install hlint --overwrite-policy=always
+
+      - name: Run HLint
+        run: |
+          export PATH=$HOME/.cabal/bin:$PATH
+          hlint -h hlint.yaml $(git ls-files '*.hs')
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6.4'
+          cabal-version: 'latest'
+          enable-stack: false
+
+      - name: Cache Cabal store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/store
+            ~/.cabal/packages
+            dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Install cabal-audit
+        run: |
+          cabal install cabal-audit --overwrite-policy=always
+        continue-on-error: true
+
+      - name: Run security audit
+        run: |
+          export PATH=$HOME/.cabal/bin:$PATH
+          cabal-audit || echo "Security audit completed with warnings"
+        continue-on-error: true

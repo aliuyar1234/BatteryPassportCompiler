@@ -1,0 +1,1051 @@
+openapi: 3.0.3
+info:
+  title: BatteryPassportCompiler API
+  version: "1.0.0"
+  description: |
+    RESTful API for BatteryPassportCompiler - deterministic compiler for Battery Passports with cryptographic proof objects, ED25519 signatures, QR codes, and audit replay capability.
+
+    **Key Features:**
+    - API Key authentication with RBAC
+    - Cursor-based pagination (limit 1-200)
+    - Idempotency for all mutating operations
+    - Correlation ID tracking
+    - Audit trail for all operations
+
+    **Error Codes:** See SSOT.md Section 2.4 for complete list
+
+servers:
+  - url: "/"
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
+      description: |
+        API Key authentication. Provide your API key in the Authorization header:
+        `Authorization: Bearer bpc_xxxxx`
+
+        Server validates using SHA-256(key + pepper).
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: |
+        Required for POST/PUT/PATCH/DELETE operations.
+        Unique identifier to ensure idempotent request processing.
+        Replay of same key with same request returns cached response.
+        Replay of same key with different request returns 409 IDEMPOTENCY_CONFLICT.
+
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 200
+      description: Maximum number of items to return (1-200, default 50)
+
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Opaque cursor for pagination (from previous response next_cursor)
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlation_id]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code (see SSOT 2.4)
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: Request validation failed
+            correlation_id:
+              type: string
+              format: uuid
+              description: Unique request identifier for tracing
+            details:
+              type: object
+              additionalProperties: true
+              description: Optional error details (e.g., validation field errors)
+
+    CursorPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+          description: Page of results
+        next_cursor:
+          type: string
+          nullable: true
+          description: Cursor for next page (null if last page)
+
+paths:
+  /v1/health/live:
+    get:
+      summary: Liveness check
+      description: Always returns 200 OK if server is running
+      operationId: healthLive
+      security: []
+      tags: [Health]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: OK
+
+  /v1/health/ready:
+    get:
+      summary: Readiness check
+      description: Returns 200 if server is ready to accept traffic (DB connected)
+      operationId: healthReady
+      security: []
+      tags: [Health]
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: OK
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                        message:
+                          type: string
+        "503":
+          description: Not Ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /v1/metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns metrics in Prometheus text format
+      operationId: metrics
+      security: []
+      tags: [Observability]
+      responses:
+        "200":
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /v1/graphql:
+    post:
+      summary: GraphQL endpoint (MVP)
+      description: Execute GraphQL queries (read-only in MVP)
+      operationId: graphql
+      tags: [GraphQL]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                variables:
+                  type: object
+      responses:
+        "200":
+          description: GraphQL response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v1/documents:
+    post:
+      summary: Create document
+      description: Create a new document container
+      operationId: createDocument
+      tags: [Documents]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind:
+                  type: string
+                  enum: [BOM, PCF, DD]
+                external_ref:
+                  type: string
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    format: uuid
+    get:
+      summary: List documents
+      description: List documents with cursor pagination
+      operationId: listDocuments
+      tags: [Documents]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/documents/{document_id}:
+    get:
+      summary: Get document
+      description: Get document metadata
+      operationId: getDocument
+      tags: [Documents]
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+
+  /v1/documents/{document_id}/versions:
+    post:
+      summary: Upload document version
+      description: Upload a new version of a document
+      operationId: uploadDocumentVersion
+      tags: [Documents]
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  format: byte
+                  description: Base64 encoded document content
+                mime_type:
+                  type: string
+      responses:
+        "201":
+          description: Created
+
+  /v1/document-versions/{document_version_id}:
+    get:
+      summary: Get document version
+      description: Get document version metadata
+      operationId: getDocumentVersion
+      tags: [Documents]
+      parameters:
+        - name: document_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+
+  /v1/document-versions/{document_version_id}/content:
+    get:
+      summary: Download document content
+      description: Download original document bytes
+      operationId: downloadDocumentContent
+      tags: [Documents]
+      parameters:
+        - name: document_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /v1/facts:
+    get:
+      summary: List facts
+      description: List facts with optional filters
+      operationId: listFacts
+      tags: [Facts]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: fact_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: fact_key_prefix
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/snapshots:
+    post:
+      summary: Create snapshot
+      description: Create a new snapshot (status BUILDING)
+      operationId: createSnapshot
+      tags: [Snapshots]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+      responses:
+        "201":
+          description: Created
+    get:
+      summary: List snapshots
+      description: List snapshots with cursor pagination
+      operationId: listSnapshots
+      tags: [Snapshots]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/snapshots/{snapshot_id}:
+    get:
+      summary: Get snapshot
+      description: Get snapshot metadata
+      operationId: getSnapshot
+      tags: [Snapshots]
+      parameters:
+        - name: snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+
+  /v1/snapshots/{snapshot_id}/items:
+    post:
+      summary: Add fact to snapshot
+      description: Add a fact to a snapshot (only if status is BUILDING)
+      operationId: addSnapshotItem
+      tags: [Snapshots]
+      parameters:
+        - name: snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fact_id]
+              properties:
+                fact_id:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: OK
+
+  /v1/snapshots/{snapshot_id}/seal:
+    post:
+      summary: Seal snapshot
+      description: Seal snapshot (status BUILDING → READY → SEALED)
+      operationId: sealSnapshot
+      tags: [Snapshots]
+      parameters:
+        - name: snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: OK
+
+  /v1/rule-packages:
+    post:
+      summary: Create rule package
+      description: Create a new rule package container
+      operationId: createRulePackage
+      tags: [Rules]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+    get:
+      summary: List rule packages
+      description: List rule packages with cursor pagination
+      operationId: listRulePackages
+      tags: [Rules]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/rule-packages/{rule_package_id}:
+    get:
+      summary: Get rule package
+      description: Get rule package metadata
+      operationId: getRulePackage
+      tags: [Rules]
+      parameters:
+        - name: rule_package_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+
+  /v1/rule-packages/{rule_package_id}/versions:
+    post:
+      summary: Create rule package version
+      description: Create a new version of a rule package
+      operationId: createRulePackageVersion
+      tags: [Rules]
+      parameters:
+        - name: rule_package_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+
+  /v1/rule-package-versions/{rule_package_version_id}:
+    get:
+      summary: Get rule package version
+      description: Get rule package version metadata
+      operationId: getRulePackageVersion
+      tags: [Rules]
+      parameters:
+        - name: rule_package_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+    delete:
+      summary: Retire rule package version
+      description: Retire a rule package version (status → RETIRED)
+      operationId: retireRulePackageVersion
+      tags: [Rules]
+      parameters:
+        - name: rule_package_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Retired
+
+  /v1/rule-package-versions/{rule_package_version_id}/tests:run:
+    post:
+      summary: Run rule tests
+      description: Execute tests for a rule package version
+      operationId: runRuleTests
+      tags: [Rules]
+      parameters:
+        - name: rule_package_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: OK
+
+  /v1/rule-package-versions/{rule_package_version_id}:publish:
+    post:
+      summary: Publish rule package version
+      description: Publish a rule package version (requires ≥500 passing tests)
+      operationId: publishRulePackageVersion
+      tags: [Rules]
+      parameters:
+        - name: rule_package_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: OK
+
+  /v1/battery-products:
+    post:
+      summary: Create battery product
+      description: Create a new battery product
+      operationId: createBatteryProduct
+      tags: [BatteryProducts]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+    get:
+      summary: List battery products
+      description: List battery products with cursor pagination
+      operationId: listBatteryProducts
+      tags: [BatteryProducts]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/battery-products/{battery_product_id}:
+    get:
+      summary: Get battery product
+      description: Get battery product metadata
+      operationId: getBatteryProduct
+      tags: [BatteryProducts]
+      parameters:
+        - name: battery_product_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+
+  /v1/passports:
+    post:
+      summary: Create passport
+      description: Create a new passport for a battery product
+      operationId: createPassport
+      tags: [Passports]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+    get:
+      summary: List passports
+      description: List passports with cursor pagination
+      operationId: listPassports
+      tags: [Passports]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/passports/{passport_id}:
+    get:
+      summary: Get passport
+      description: Get passport metadata
+      operationId: getPassport
+      tags: [Passports]
+      parameters:
+        - name: passport_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+
+  /v1/passports/{passport_id}/versions:
+    get:
+      summary: List passport versions
+      description: List versions for a passport with cursor pagination
+      operationId: listPassportVersions
+      tags: [Passports]
+      parameters:
+        - name: passport_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/passports/{passport_id}/compile:
+    post:
+      summary: Compile passport
+      description: Enqueue a compile job for a passport (returns 202 Accepted)
+      operationId: compilePassport
+      tags: [Passports]
+      parameters:
+        - name: passport_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "202":
+          description: Accepted
+
+  /v1/passport-versions/{passport_version_id}:
+    get:
+      summary: Get passport version
+      description: Get passport version metadata
+      operationId: getPassportVersion
+      tags: [PassportVersions]
+      parameters:
+        - name: passport_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+
+  /v1/passport-versions/{passport_version_id}/payload:
+    get:
+      summary: Get payload
+      description: Get passport version payload (canonical JSON)
+      operationId: getPassportVersionPayload
+      tags: [PassportVersions]
+      parameters:
+        - name: passport_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /v1/passport-versions/{passport_version_id}/proof:
+    get:
+      summary: Get proof
+      description: Get passport version proof (canonical JSON)
+      operationId: getPassportVersionProof
+      tags: [PassportVersions]
+      parameters:
+        - name: passport_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /v1/passport-versions/{passport_version_id}/receipt:
+    get:
+      summary: Get receipt
+      description: Get passport version receipt (canonical JSON)
+      operationId: getPassportVersionReceipt
+      tags: [PassportVersions]
+      parameters:
+        - name: passport_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /v1/passport-versions/{passport_version_id}/qr.png:
+    get:
+      summary: Get QR code
+      description: Get passport version QR code as PNG image
+      operationId: getPassportVersionQR
+      tags: [PassportVersions]
+      parameters:
+        - name: passport_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+
+  /v1/passport-versions/{passport_version_id}/activate:
+    post:
+      summary: Activate passport version
+      description: Activate a passport version (status SIGNED → ACTIVE)
+      operationId: activatePassportVersion
+      tags: [PassportVersions]
+      parameters:
+        - name: passport_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: OK
+
+  /v1/passport-versions/{passport_version_id}/revoke:
+    post:
+      summary: Revoke passport version
+      description: Revoke a passport version (status → REVOKED)
+      operationId: revokePassportVersion
+      tags: [PassportVersions]
+      parameters:
+        - name: passport_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: OK
+
+  /v1/passport-versions/{passport_version_id}/replay:
+    post:
+      summary: Replay/verify passport version
+      description: Re-execute compilation and verify byte-exact reproduction
+      operationId: replayPassportVersion
+      tags: [PassportVersions]
+      parameters:
+        - name: passport_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Verification passed
+        "409":
+          description: Replay mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /v1/audit/events:
+    get:
+      summary: List audit events
+      description: List audit events with cursor pagination
+      operationId: listAuditEvents
+      tags: [Audit]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/webhook-endpoints:
+    post:
+      summary: Create webhook endpoint
+      description: Create a new webhook endpoint
+      operationId: createWebhookEndpoint
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+    get:
+      summary: List webhook endpoints
+      description: List webhook endpoints with cursor pagination
+      operationId: listWebhookEndpoints
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/webhook-endpoints/{webhook_endpoint_id}:
+    delete:
+      summary: Delete webhook endpoint
+      description: Delete a webhook endpoint
+      operationId: deleteWebhookEndpoint
+      tags: [Webhooks]
+      parameters:
+        - name: webhook_endpoint_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted
+
+  /v1/webhook-subscriptions:
+    post:
+      summary: Create webhook subscription
+      description: Subscribe webhook endpoint to an event type
+      operationId: createWebhookSubscription
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+    get:
+      summary: List webhook subscriptions
+      description: List webhook subscriptions with cursor pagination
+      operationId: listWebhookSubscriptions
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CursorPage"
+
+  /v1/webhook-subscriptions/{webhook_subscription_id}:
+    delete:
+      summary: Delete webhook subscription
+      description: Delete a webhook subscription
+      operationId: deleteWebhookSubscription
+      tags: [Webhooks]
+      parameters:
+        - name: webhook_subscription_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted

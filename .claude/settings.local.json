@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -ExecutionPolicy Bypass -File \".specify/scripts/powershell/setup-plan.ps1\" -Json)",
+      "Bash(for dir in 01-foundation 02-core-primitives 03-rule-engine 04-compilation-pipeline 05-data-layer 06-api-server 07-job-processing 08-advanced-features)",
+      "Bash(do rm -f \".specify/features/$dir/plan.md\" \".specify/features/$dir/research.md\" \".specify/features/$dir/data-model.md\" \".specify/features/$dir/quickstart.md\")",
+      "Bash(done)",
+      "SlashCommand(/speckit.plan)",
+      "Bash(do cp \".specify/features/$dir/spec.md\" \"specs/$dir/\")",
+      "SlashCommand(/speckit.analyze:*)",
+      "Bash(powershell:*)"
+    ]
+  }
+}

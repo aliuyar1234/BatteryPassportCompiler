@@ -1,0 +1,139 @@
+cabal-version: 3.0
+name:          bpc-api
+version:       0.1.0.0
+synopsis:      Battery Passport Compiler - HTTP API server
+description:   WAI/Warp HTTP server with authentication, RBAC, pagination,
+               idempotency, and RESTful endpoints for the BPC pipeline.
+license:       BSD-3-Clause
+author:        BPC Team
+maintainer:    team@bpc.example
+category:      Web
+build-type:    Simple
+
+common warnings
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates
+               -Wincomplete-uni-patterns -Wmissing-export-lists
+               -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+
+common extensions
+  default-extensions:
+    DataKinds
+    DeriveAnyClass
+    DeriveGeneric
+    DerivingStrategies
+    DuplicateRecordFields
+    FlexibleContexts
+    FlexibleInstances
+    GADTs
+    GeneralizedNewtypeDeriving
+    LambdaCase
+    MultiParamTypeClasses
+    OverloadedStrings
+    RecordWildCards
+    ScopedTypeVariables
+    StandaloneDeriving
+    StrictData
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+  default-language: GHC2021
+
+library
+  import:           warnings, extensions
+  hs-source-dirs:   src
+  exposed-modules:
+    BPC.API
+    BPC.API.App
+    BPC.API.Error
+    BPC.API.Types
+    BPC.API.Routes
+    BPC.API.OpenAPI
+    BPC.API.GraphQL
+    BPC.API.Middleware.Auth
+    BPC.API.Middleware.CorrelationId
+    BPC.API.Middleware.Idempotency
+    BPC.API.Handlers.Documents
+    BPC.API.Handlers.Facts
+    BPC.API.Handlers.Snapshots
+    BPC.API.Handlers.Passports
+    BPC.API.Handlers.RulePackages
+    BPC.API.Handlers.Audit
+    BPC.API.Handlers.Health
+    BPC.API.Handlers.Metrics
+    BPC.API.Handlers.Webhooks
+    BPC.API.Handlers.Policies
+    BPC.API.Middleware.Policy
+    BPC.API.Middleware.RateLimit
+  build-depends:
+    , aeson               >= 2.1  && < 2.3
+    , base                >= 4.17 && < 5
+    , base64-bytestring   >= 1.2  && < 1.3
+    , bpc-core
+    , bpc-db
+    , bytestring          >= 0.11 && < 0.13
+    , containers          >= 0.6  && < 0.8
+    , cryptonite          >= 0.30 && < 0.32
+    , http-types          >= 0.12 && < 0.13
+    , memory              >= 0.18 && < 0.19
+    , mtl                 >= 2.3  && < 2.4
+    , text                >= 2.0  && < 2.2
+    , time                >= 1.12 && < 1.15
+    , uuid                >= 1.3  && < 1.4
+    , wai                 >= 3.2  && < 3.3
+    , wai-extra           >= 3.1  && < 3.2
+    , warp                >= 3.3  && < 3.5
+
+executable bpc-api
+  import:           warnings, extensions
+  main-is:          Main.hs
+  hs-source-dirs:   app
+  build-depends:
+    , base
+    , bpc-api
+    , warp
+
+test-suite unit
+  import:           warnings, extensions
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test/unit
+  main-is:          Spec.hs
+  other-modules:
+    BPC.API.AuthSpec
+    BPC.API.MiddlewareSpec
+    BPC.API.HandlersSpec
+  build-depends:
+    , aeson
+    , base
+    , bpc-api
+    , bpc-core
+    , bpc-db
+    , bytestring
+    , tasty               >= 1.4  && < 1.6
+    , tasty-hunit         >= 0.10 && < 0.11
+    , tasty-quickcheck    >= 0.10 && < 0.12
+    , text
+    , uuid
+    , wai
+    , wai-extra
+
+test-suite integration
+  import:           warnings, extensions
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test/integration
+  main-is:          Spec.hs
+  other-modules:
+    BPC.API.IntegrationSpec
+  build-depends:
+    , aeson
+    , base
+    , bpc-api
+    , bpc-core
+    , bpc-db
+    , bytestring
+    , http-types
+    , tasty               >= 1.4  && < 1.6
+    , tasty-hunit         >= 0.10 && < 0.11
+    , text
+    , uuid
+    , wai
+    , wai-extra

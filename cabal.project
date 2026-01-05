@@ -1,0 +1,12 @@
+packages:
+  packages/bpc-core
+  packages/bpc-db
+  packages/bpc-api
+  packages/bpc-worker
+  packages/bpc-cli
+
+with-compiler: ghc-9.6.4
+
+package *:
+  ghc-options: -Wall -Wcompat -Werror
+  optimization: 2

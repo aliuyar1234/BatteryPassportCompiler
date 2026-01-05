@@ -1,0 +1,472 @@
+# Webhook API Endpoints
+# Feature: 08-advanced-features
+# SSOT Reference: Section 6.4, 7.10, 10.4, 10.6
+
+openapi: 3.0.3
+info:
+  title: BPC Webhook API
+  version: 1.0.0
+
+paths:
+  /v1/webhook-endpoints:
+    post:
+      summary: Create a webhook endpoint
+      operationId: createWebhookEndpoint
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookEndpointInput'
+            example:
+              url: "https://my-service.example.com/webhooks/bpc"
+              secret: "base64-encoded-secret"
+      responses:
+        '201':
+          description: Webhook endpoint created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookEndpointResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+    get:
+      summary: List webhook endpoints
+      operationId: listWebhookEndpoints
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: List of webhook endpoints
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookEndpointListResponse'
+
+  /v1/webhook-endpoints/{webhook_endpoint_id}:
+    get:
+      summary: Get webhook endpoint by ID
+      operationId: getWebhookEndpoint
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: webhook_endpoint_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Webhook endpoint details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookEndpointResponse'
+
+    delete:
+      summary: Deactivate webhook endpoint
+      operationId: deactivateWebhookEndpoint
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: webhook_endpoint_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Webhook endpoint deactivated
+
+  /v1/webhook-subscriptions:
+    post:
+      summary: Create a webhook subscription
+      operationId: createWebhookSubscription
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookSubscriptionInput'
+            example:
+              webhook_endpoint_id: "uuid"
+              event_type: "passport.version.active"
+      responses:
+        '201':
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscriptionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+    get:
+      summary: List webhook subscriptions
+      operationId: listWebhookSubscriptions
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: webhook_endpoint_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: event_type
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of subscriptions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscriptionListResponse'
+
+  /v1/webhook-subscriptions/{webhook_subscription_id}:
+    delete:
+      summary: Delete webhook subscription
+      operationId: deleteWebhookSubscription
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: webhook_subscription_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Subscription deleted
+
+  /v1/webhook-deliveries:
+    get:
+      summary: List webhook deliveries (for debugging)
+      operationId: listWebhookDeliveries
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: webhook_endpoint_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, DELIVERED, FAILED]
+      responses:
+        '200':
+          description: List of deliveries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookDeliveryListResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 200
+
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+
+  schemas:
+    CreateWebhookEndpointInput:
+      type: object
+      required:
+        - url
+        - secret
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTPS URL to send webhooks to
+        secret:
+          type: string
+          description: Base64-encoded secret for HMAC signature (32 bytes recommended)
+
+    CreateWebhookSubscriptionInput:
+      type: object
+      required:
+        - webhook_endpoint_id
+        - event_type
+      properties:
+        webhook_endpoint_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          enum:
+            - passport.version.signed
+            - passport.version.active
+            - passport.version.revoked
+            - rules.version.published
+            - document.version.validated
+          description: Event type to subscribe to (SSOT 10.6)
+
+    WebhookEndpointResponse:
+      type: object
+      required:
+        - webhook_endpoint_id
+        - tenant_id
+        - url
+        - is_active
+        - created_at
+      properties:
+        webhook_endpoint_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+
+    WebhookSubscriptionResponse:
+      type: object
+      required:
+        - webhook_subscription_id
+        - tenant_id
+        - webhook_endpoint_id
+        - event_type
+        - created_at
+      properties:
+        webhook_subscription_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        webhook_endpoint_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    WebhookDeliveryResponse:
+      type: object
+      required:
+        - webhook_delivery_id
+        - tenant_id
+        - webhook_endpoint_id
+        - event_id
+        - attempt
+        - status
+        - created_at
+      properties:
+        webhook_delivery_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        webhook_endpoint_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        attempt:
+          type: integer
+        status:
+          type: string
+          enum: [PENDING, DELIVERED, FAILED]
+        last_error:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    WebhookEndpointListResponse:
+      type: object
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookEndpointResponse'
+        next_cursor:
+          type: string
+          nullable: true
+
+    WebhookSubscriptionListResponse:
+      type: object
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookSubscriptionResponse'
+        next_cursor:
+          type: string
+          nullable: true
+
+    WebhookDeliveryListResponse:
+      type: object
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookDeliveryResponse'
+        next_cursor:
+          type: string
+          nullable: true
+
+    # Webhook payload schema (sent to webhook endpoint)
+    WebhookPayload:
+      type: object
+      required:
+        - event_type
+        - event_id
+        - occurred_at
+        - tenant_id
+        - data
+      properties:
+        event_type:
+          type: string
+          description: Event type (e.g., passport.version.active)
+        event_id:
+          type: string
+          format: uuid
+          description: Unique event ID
+        occurred_at:
+          type: string
+          format: date-time
+          description: When the event occurred
+        tenant_id:
+          type: string
+          format: uuid
+          description: Tenant that owns the resource
+        data:
+          type: object
+          description: Event-specific data
+          additionalProperties: true
+      example:
+        event_type: "passport.version.active"
+        event_id: "uuid"
+        occurred_at: "2025-12-28T12:34:56Z"
+        tenant_id: "uuid"
+        data:
+          passport_version_id: "uuid"
+          passport_id: "uuid"
+          battery_product_id: "uuid"
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    ErrorEnvelope:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - correlation_id
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            correlation_id:
+              type: string
+              format: uuid
+            details:
+              type: object
+              additionalProperties: true
+
+# Webhook signature format (BPC-WH-1)
+# Header: X-BPC-Signature: sha256=<hex(hmac_sha256(secret, body))>
+# Receiver must verify signature using HMAC-SHA256 with shared secret

@@ -1,0 +1,130 @@
+cabal-version: 3.0
+name:          bpc-db
+version:       0.1.0.0
+synopsis:      Database access layer for Battery Passport Compiler
+description:   Repository pattern implementation for BPC with PostgreSQL,
+               connection pooling, event sourcing, and tenant isolation.
+license:       BSD-3-Clause
+author:        BPC Team
+maintainer:    team@bpc.example
+category:      Database
+build-type:    Simple
+
+common warnings
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates
+               -Wincomplete-uni-patterns -Wmissing-export-lists
+               -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+
+common extensions
+  default-extensions:
+    DataKinds
+    DeriveAnyClass
+    DeriveGeneric
+    DerivingStrategies
+    DuplicateRecordFields
+    FlexibleContexts
+    FlexibleInstances
+    GADTs
+    GeneralizedNewtypeDeriving
+    LambdaCase
+    MultiParamTypeClasses
+    OverloadedStrings
+    RecordWildCards
+    ScopedTypeVariables
+    StandaloneDeriving
+    StrictData
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+  default-language: GHC2021
+
+library
+  import:           warnings, extensions
+  hs-source-dirs:   src
+  exposed-modules:
+    BPC.DB
+    BPC.DB.Error
+    BPC.DB.Pool
+    BPC.DB.Repos.Auth
+    BPC.DB.Repos.Documents
+    BPC.DB.Repos.Events
+    BPC.DB.Repos.Facts
+    BPC.DB.Repos.Idempotency
+    BPC.DB.Repos.Jobs
+    BPC.DB.Repos.Passports
+    BPC.DB.Repos.Rules
+    BPC.DB.Repos.Snapshots
+    BPC.DB.Repos.Webhooks
+    BPC.DB.Repos.Policies
+    BPC.DB.Crypto
+  build-depends:
+    , aeson               >= 2.1  && < 2.3
+    , base                >= 4.17 && < 5
+    , bpc-core
+    , bytestring          >= 0.11 && < 0.13
+    , containers          >= 0.6  && < 0.8
+    , cryptonite          >= 0.30 && < 0.32
+    , base64-bytestring   >= 1.2  && < 1.3
+    , memory              >= 0.18 && < 0.19
+    , mtl                 >= 2.3  && < 2.4
+    , postgresql-simple   >= 0.6  && < 0.8
+    , resource-pool       >= 0.4  && < 0.5
+    , text                >= 2.0  && < 2.2
+    , time                >= 1.12 && < 1.15
+    , uuid                >= 1.3  && < 1.4
+    , vector              >= 0.13 && < 0.14
+
+test-suite unit
+  import:           warnings, extensions
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test/unit
+  main-is:          Spec.hs
+  other-modules:
+    BPC.DB.PoolSpec
+    BPC.DB.EventsSpec
+    BPC.DB.JobsSpec
+    BPC.DB.SnapshotsSpec
+  build-depends:
+    , aeson
+    , base
+    , bpc-core
+    , bpc-db
+    , bytestring
+    , tasty               >= 1.4  && < 1.6
+    , tasty-hunit         >= 0.10 && < 0.11
+    , tasty-quickcheck    >= 0.10 && < 0.12
+    , QuickCheck          >= 2.14 && < 2.16
+    , text
+    , uuid
+
+test-suite integration
+  import:           warnings, extensions
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test/integration
+  main-is:          Spec.hs
+  other-modules:
+    BPC.DB.AuthIntegrationSpec
+    BPC.DB.DatabaseSpec
+    BPC.DB.DocumentsIntegrationSpec
+    BPC.DB.EventsIntegrationSpec
+    BPC.DB.FactsIntegrationSpec
+    BPC.DB.JobsIntegrationSpec
+    BPC.DB.PassportsIntegrationSpec
+    BPC.DB.RulesIntegrationSpec
+    BPC.DB.SnapshotsIntegrationSpec
+    BPC.DB.TenantIsolationSpec
+    BPC.DB.WebhooksIntegrationSpec
+  build-depends:
+    , aeson
+    , base
+    , bpc-core
+    , bpc-db
+    , bytestring
+    , postgresql-simple
+    , resource-pool
+    , tasty               >= 1.4  && < 1.6
+    , tasty-hunit         >= 0.10 && < 0.11
+    , tasty-quickcheck    >= 0.10 && < 0.12
+    , QuickCheck          >= 2.14 && < 2.16
+    , text
+    , uuid

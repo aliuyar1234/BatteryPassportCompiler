@@ -1,0 +1,374 @@
+# Policy API Endpoints
+# Feature: 08-advanced-features
+# SSOT Reference: Section 6.4, 10.4
+
+openapi: 3.0.3
+info:
+  title: BPC Policy API
+  version: 1.0.0
+
+paths:
+  /v1/policies:
+    post:
+      summary: Create a new policy
+      operationId: createPolicy
+      tags: [Policies]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePolicyInput'
+            example:
+              name: "Block Legacy Passport"
+              effect: "DENY"
+              target: "/v1/passports/legacy-*"
+              priority: 10
+              conditions:
+                resource_prefix: "legacy"
+      responses:
+        '201':
+          description: Policy created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    get:
+      summary: List policies
+      operationId: listPolicies
+      tags: [Policies]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: List of policies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyListResponse'
+
+  /v1/policies/{policy_id}:
+    get:
+      summary: Get policy by ID
+      operationId: getPolicy
+      tags: [Policies]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/policies/{policy_id}/versions:
+    post:
+      summary: Create new policy version
+      operationId: createPolicyVersion
+      tags: [Policies]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePolicyVersionInput'
+      responses:
+        '201':
+          description: Policy version created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyVersionResponse'
+
+  /v1/policy-versions/{policy_version_id}:
+    get:
+      summary: Get policy version by ID
+      operationId: getPolicyVersion
+      tags: [Policies]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: policy_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy version details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyVersionResponse'
+
+    delete:
+      summary: Deactivate policy version
+      operationId: deactivatePolicyVersion
+      tags: [Policies]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: policy_version_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Policy version deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyVersionResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 200
+
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+
+  schemas:
+    CreatePolicyInput:
+      type: object
+      required:
+        - name
+        - effect
+        - target
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        effect:
+          type: string
+          enum: [ALLOW, DENY]
+        target:
+          type: string
+          description: Path pattern (e.g., /v1/passports/*, /v1/documents/123)
+        priority:
+          type: integer
+          default: 100
+          description: Lower number = higher priority
+        conditions:
+          type: object
+          additionalProperties: true
+          description: Optional conditions for policy matching
+
+    CreatePolicyVersionInput:
+      type: object
+      required:
+        - effect
+        - target
+      properties:
+        effect:
+          type: string
+          enum: [ALLOW, DENY]
+        target:
+          type: string
+        priority:
+          type: integer
+          default: 100
+        conditions:
+          type: object
+          additionalProperties: true
+
+    PolicyResponse:
+      type: object
+      required:
+        - policy_id
+        - tenant_id
+        - name
+        - created_at
+        - current_version
+      properties:
+        policy_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+        current_version:
+          $ref: '#/components/schemas/PolicyVersionResponse'
+
+    PolicyVersionResponse:
+      type: object
+      required:
+        - policy_version_id
+        - tenant_id
+        - policy_id
+        - version
+        - is_active
+        - effect
+        - target
+        - priority
+        - policy_hash
+        - created_at
+      properties:
+        policy_version_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        policy_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        is_active:
+          type: boolean
+        effect:
+          type: string
+          enum: [ALLOW, DENY]
+        target:
+          type: string
+        priority:
+          type: integer
+        policy_json:
+          type: object
+        policy_hash:
+          type: string
+          description: SHA-256 hash of canonical policy JSON
+        created_at:
+          type: string
+          format: date-time
+
+    PolicyListResponse:
+      type: object
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyResponse'
+        next_cursor:
+          type: string
+          nullable: true
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+    ErrorEnvelope:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - correlation_id
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            correlation_id:
+              type: string
+              format: uuid
+            details:
+              type: object
+              additionalProperties: true

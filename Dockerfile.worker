@@ -1,0 +1,45 @@
+# Multi-stage build for bpc-worker
+FROM haskell:9.6.4 AS builder
+
+WORKDIR /build
+
+# Copy cabal project files
+COPY cabal.project ./
+COPY packages/bpc-core/bpc-core.cabal ./packages/bpc-core/
+COPY packages/bpc-db/bpc-db.cabal ./packages/bpc-db/
+COPY packages/bpc-worker/bpc-worker.cabal ./packages/bpc-worker/
+
+# Update and install dependencies
+RUN cabal update &&     cabal build --only-dependencies bpc-worker
+
+# Copy source code
+COPY packages/bpc-core ./packages/bpc-core
+COPY packages/bpc-db ./packages/bpc-db
+COPY packages/bpc-worker ./packages/bpc-worker
+
+# Build the application
+RUN cabal build bpc-worker &&     mkdir -p /output &&     cp $(cabal list-bin bpc-worker) /output/bpc-worker
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update &&     apt-get install -y --no-install-recommends         ca-certificates         libgmp10         libpq5         netbase &&     rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 bpc
+
+WORKDIR /app
+
+# Copy executable from builder
+COPY --from=builder --chown=bpc:bpc /output/bpc-worker /app/bpc-worker
+
+USER bpc
+
+# No exposed ports for worker (it's a background job processor)
+
+# Health check - could check if worker is responsive via a health endpoint if implemented
+# For now, we just check if the process is running
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3     CMD ["/bin/sh", "-c", "ps aux | grep -v grep | grep bpc-worker || exit 1"]
+
+CMD ["/app/bpc-worker"]

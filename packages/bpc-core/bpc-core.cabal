@@ -1,0 +1,101 @@
+cabal-version:      3.0
+name:               bpc-core
+version:            0.1.0.0
+synopsis:           Battery Passport Compiler - Core domain logic (IO-free)
+license:            BSD-3-Clause
+build-type:         Simple
+
+library
+  exposed-modules:
+    BPC.Core
+    BPC.Core.Error
+    BPC.Core.CanonicalJson
+    BPC.Core.Hash
+    BPC.Core.Types.Domain
+    BPC.Core.Types.Decimal
+    BPC.Core.Types.Units
+    BPC.Core.Types.Quantity
+    BPC.Core.Rules
+    BPC.Core.Rules.AST
+    BPC.Core.Rules.Error
+    BPC.Core.Rules.Lexer
+    BPC.Core.Rules.Parser
+    BPC.Core.Rules.Typecheck
+    BPC.Core.Rules.Graph
+    BPC.Core.Rules.Eval
+    BPC.Core.Rules.Builtins
+    BPC.Core.Compile
+    BPC.Core.Proof
+    BPC.Core.Receipt
+    BPC.Core.QR
+    BPC.Core.Placeholder
+    BPC.Core.Signing
+  other-modules:
+  hs-source-dirs:   src
+  default-language: Haskell2010
+  default-extensions:
+    DataKinds
+    DeriveGeneric
+    DerivingStrategies
+    GADTs
+    GeneralizedNewtypeDeriving
+    KindSignatures
+    PolyKinds
+    RecordWildCards
+    ScopedTypeVariables
+    TypeApplications
+    TypeFamilies
+  build-depends:
+      base >= 4.17 && < 5
+    , aeson >= 2.1 && < 2.3
+    , base16-bytestring >= 1.0 && < 1.1
+    , base64-bytestring >= 1.2 && < 1.3
+    , bytestring >= 0.11 && < 0.13
+    , containers >= 0.6 && < 0.8
+    , cryptonite >= 0.30 && < 0.35
+    , megaparsec >= 9.3 && < 9.7
+    , memory >= 0.18 && < 0.19
+    , mtl >= 2.3 && < 2.4
+    , parser-combinators >= 1.3 && < 1.4
+    , scientific >= 0.3 && < 0.4
+    , text >= 2.0 && < 2.2
+    , time >= 1.12 && < 1.15
+    , uuid >= 1.3 && < 1.4
+    , vector >= 0.13 && < 0.14
+
+test-suite unit
+  type:             exitcode-stdio-1.0
+  main-is:          Spec.hs
+  other-modules:
+    BPC.Core.CanonicalJsonSpec
+    BPC.Core.HashSpec
+    BPC.Core.DomainSpec
+    BPC.Core.DecimalSpec
+    BPC.Core.QuantitySpec
+    BPC.Core.Rules.ParserSpec
+    BPC.Core.Rules.TypecheckSpec
+    BPC.Core.Rules.GraphSpec
+    BPC.Core.Rules.BuiltinsSpec
+    BPC.Core.Rules.EvalSpec
+    BPC.Core.CompileSpec
+    BPC.Core.ProofSpec
+    BPC.Core.ReceiptSpec
+    BPC.Core.QRSpec
+  hs-source-dirs:   test
+  default-language: Haskell2010
+  default-extensions:
+    OverloadedStrings
+    ScopedTypeVariables
+  build-depends:
+      base >= 4.17 && < 5
+    , bpc-core
+    , aeson
+    , bytestring
+    , containers
+    , QuickCheck >= 2.14 && < 2.16
+    , tasty >= 1.4 && < 1.6
+    , tasty-golden >= 2.3 && < 2.4
+    , tasty-hunit >= 0.10 && < 0.11
+    , tasty-quickcheck >= 0.10 && < 0.12
+    , text
+    , uuid

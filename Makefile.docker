@@ -1,0 +1,86 @@
+# BPC Docker Makefile
+.PHONY: help build up down logs clean test migrate seed
+
+help: ## Show this help message
+	@echo 'Usage: make [target]'
+	@echo ''
+	@echo 'Available targets:'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  [36m%-15s[0m %s
+", $$1, $$2}'
+
+build: ## Build all Docker images
+	docker compose build
+
+build-api: ## Build bpc-api image
+	docker compose build bpc-api
+
+build-worker: ## Build bpc-worker image
+	docker compose build bpc-worker
+
+up: ## Start all services
+	docker compose up -d
+
+up-deps: ## Start only dependencies (postgres, rabbitmq)
+	docker compose up -d postgres rabbitmq
+
+down: ## Stop all services
+	docker compose down
+
+down-volumes: ## Stop all services and remove volumes
+	docker compose down -v
+
+logs: ## Show logs from all services
+	docker compose logs -f
+
+logs-api: ## Show logs from bpc-api
+	docker compose logs -f bpc-api
+
+logs-worker: ## Show logs from bpc-worker
+	docker compose logs -f bpc-worker
+
+ps: ## Show running containers
+	docker compose ps
+
+restart: ## Restart all services
+	docker compose restart
+
+restart-api: ## Restart bpc-api
+	docker compose restart bpc-api
+
+restart-worker: ## Restart bpc-worker
+	docker compose restart bpc-worker
+
+clean: ## Remove all containers, volumes, and images
+	docker compose down -v --rmi all
+
+migrate: ## Run database migrations
+	./scripts/migrate.sh
+
+seed: ## Seed development data
+	./scripts/seed-dev.sh
+
+test: ## Run all tests
+	cabal test all
+
+shell-api: ## Open shell in bpc-api container
+	docker compose exec bpc-api /bin/sh
+
+shell-worker: ## Open shell in bpc-worker container
+	docker compose exec bpc-worker /bin/sh
+
+shell-db: ## Open PostgreSQL shell
+	docker compose exec postgres psql -U bpc bpc
+
+health: ## Check health of all services
+	@echo "Checking service health..."
+	@docker compose ps
+
+rebuild: down build up ## Rebuild and restart all services
+
+rebuild-api: ## Rebuild and restart bpc-api
+	docker compose build bpc-api
+	docker compose up -d bpc-api
+
+rebuild-worker: ## Rebuild and restart bpc-worker
+	docker compose build bpc-worker
+	docker compose up -d bpc-worker

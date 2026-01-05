@@ -1,0 +1,160 @@
+# Rate Limit HTTP Headers
+# Feature: 08-advanced-features
+# SSOT Reference: Section 7.9 (BPC-RL-1)
+
+# Rate limit information headers (informational, included in successful responses)
+rate_limit_info_headers:
+  X-RateLimit-Limit:
+    description: Maximum requests per time window (burst capacity)
+    type: integer
+    example: 100
+
+  X-RateLimit-Remaining:
+    description: Remaining requests in current window
+    type: integer
+    example: 42
+
+  X-RateLimit-Reset:
+    description: Unix timestamp when rate limit resets
+    type: integer
+    example: 1735392896
+
+# Rate limit exceeded response (429 Too Many Requests)
+rate_limit_exceeded_response:
+  status: 429
+  headers:
+    Retry-After:
+      description: Seconds until client can retry (BPC-RL-1)
+      type: integer
+      required: true
+      example: 12
+
+    X-RateLimit-Limit:
+      description: Maximum requests per time window
+      type: integer
+      example: 100
+
+    X-RateLimit-Remaining:
+      description: Always 0 when rate limited
+      type: integer
+      example: 0
+
+    X-RateLimit-Reset:
+      description: Unix timestamp when rate limit resets
+      type: integer
+      example: 1735392896
+
+  body:
+    type: object
+    required:
+      - error
+    properties:
+      error:
+        type: object
+        required:
+          - code
+          - message
+          - correlation_id
+        properties:
+          code:
+            type: string
+            const: RATE_LIMITED
+          message:
+            type: string
+            example: "Rate limit exceeded. Retry after 12 seconds."
+          correlation_id:
+            type: string
+            format: uuid
+          details:
+            type: object
+            properties:
+              retry_after:
+                type: integer
+                description: Seconds until retry
+              limit:
+                type: integer
+                description: Rate limit (requests per second)
+              burst:
+                type: integer
+                description: Burst capacity
+
+# Token Bucket Algorithm (BPC-RL-1)
+# 1. Each API key has a token bucket with capacity (burst) and refill rate (RPS)
+# 2. Each request consumes 1 token
+# 3. Tokens refill continuously at refill_per_second rate
+# 4. If tokens < 1: deny with retry_after = (1 - tokens) / refill_per_second
+# 5. Retry-After header tells client when to retry (in seconds)
+
+# Configuration (ENV variables)
+rate_limit_config:
+  BPC_RATE_LIMIT_ENABLED:
+    type: boolean
+    default: true
+    description: Enable rate limiting
+
+  BPC_RATE_LIMIT_RPS:
+    type: integer
+    default: 50
+    description: Refill rate (tokens per second)
+
+  BPC_RATE_LIMIT_BURST:
+    type: integer
+    default: 100
+    description: Bucket capacity (max burst requests)
+
+# Example responses
+examples:
+  successful_request:
+    status: 200
+    headers:
+      X-RateLimit-Limit: 100
+      X-RateLimit-Remaining: 42
+      X-RateLimit-Reset: 1735392896
+    body:
+      # Normal response
+
+  rate_limited_request:
+    status: 429
+    headers:
+      Retry-After: 12
+      X-RateLimit-Limit: 100
+      X-RateLimit-Remaining: 0
+      X-RateLimit-Reset: 1735392908
+    body:
+      error:
+        code: RATE_LIMITED
+        message: "Rate limit exceeded. Retry after 12 seconds."
+        correlation_id: "uuid"
+        details:
+          retry_after: 12
+          limit: 50
+          burst: 100
+
+# Rate limit is per API key (key_hash), not per tenant
+# Multiple API keys in same tenant have independent rate limits
+# Unauthenticated requests are not rate limited
+
+# Database table (SSOT 6.5)
+# CREATE TABLE rate_limit_buckets (
+#   tenant_id uuid NOT NULL,
+#   key_hash bytea NOT NULL,
+#   capacity int NOT NULL,
+#   tokens numeric NOT NULL,
+#   refill_per_second numeric NOT NULL,
+#   updated_at timestamptz NOT NULL,
+#   PRIMARY KEY(tenant_id, key_hash)
+# );
+
+# Algorithm implementation (SSOT 7.9)
+algorithm_pseudocode: |
+  consume(key, tokens_needed):
+    row = SELECT ... FOR UPDATE WHERE key_hash = hash(key)
+    elapsed = now() - row.updated_at
+    refilled = min(row.capacity, row.tokens + elapsed * row.refill_per_second)
+
+    if refilled < tokens_needed:
+      retry_after = (tokens_needed - refilled) / refill_per_second
+      return DENIED with retry_after
+
+    UPDATE tokens = refilled - tokens_needed, updated_at = now()
+    return ALLOWED

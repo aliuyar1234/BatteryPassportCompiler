@@ -1,0 +1,55 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github
+
+# Documentation
+*.md
+docs/
+specs/
+
+# Build artifacts
+dist-newstyle/
+*.hi
+*.o
+.ghc.environment.*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.hpc/
+*.tix
+
+# Cabal
+cabal.project.local
+cabal.project.local~
+.ghc.environment.*
+
+# Docker
+docker-compose.yml
+Dockerfile*
+.dockerignore
+
+# Scripts (not needed in containers)
+scripts/
+
+# Claude AI
+.claude/
+CLAUDE.md
+.specify/
+
+# Local environment files
+.env
+.env.local
+
+# Database files
+*.db
+*.sqlite

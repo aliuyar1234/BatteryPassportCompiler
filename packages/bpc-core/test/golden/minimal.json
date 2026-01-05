@@ -1,0 +1,15 @@
+{
+  "description": "Minimal golden test fixture",
+  "input": {
+    "snapshot_id": "00000000-0000-0000-0000-000000000000",
+    "snapshot_hash": "abc123",
+    "rules_id": "00000000-0000-0000-0000-000000000000",
+    "rules_hash": "def456",
+    "facts": {}
+  },
+  "expected_output": {
+    "payload_hash": "placeholder",
+    "proof_hash": "placeholder",
+    "receipt_hash": "placeholder"
+  }
+}

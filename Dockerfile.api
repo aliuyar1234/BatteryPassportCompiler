@@ -1,0 +1,44 @@
+# Multi-stage build for bpc-api
+FROM haskell:9.6.4 AS builder
+
+WORKDIR /build
+
+# Copy cabal project files
+COPY cabal.project ./
+COPY packages/bpc-core/bpc-core.cabal ./packages/bpc-core/
+COPY packages/bpc-db/bpc-db.cabal ./packages/bpc-db/
+COPY packages/bpc-api/bpc-api.cabal ./packages/bpc-api/
+
+# Update and install dependencies
+RUN cabal update &&     cabal build --only-dependencies bpc-api
+
+# Copy source code
+COPY packages/bpc-core ./packages/bpc-core
+COPY packages/bpc-db ./packages/bpc-db
+COPY packages/bpc-api ./packages/bpc-api
+
+# Build the application
+RUN cabal build bpc-api &&     mkdir -p /output &&     cp $(cabal list-bin bpc-api) /output/bpc-api
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update &&     apt-get install -y --no-install-recommends         ca-certificates         libgmp10         libpq5         netbase &&     rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 bpc
+
+WORKDIR /app
+
+# Copy executable from builder
+COPY --from=builder --chown=bpc:bpc /output/bpc-api /app/bpc-api
+
+USER bpc
+
+EXPOSE 8080
+
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3     CMD ["/bin/sh", "-c", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1"]
+
+CMD ["/app/bpc-api"]

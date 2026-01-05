@@ -1,0 +1,157 @@
+cabal-version: 3.0
+name:          bpc-worker
+version:       0.1.0.0
+synopsis:      Battery Passport Compiler - Job Processing Worker
+description:   Async job processing worker for the Battery Passport Compiler.
+               Handles document parsing, passport compilation, signing, QR generation,
+               and webhook delivery with exponential backoff retry logic.
+license:       MIT
+license-file:  LICENSE
+author:        BPC Team
+maintainer:    team@bpc.example
+category:      Data
+build-type:    Simple
+
+common common-options
+  default-language: GHC2021
+  default-extensions:
+    DataKinds
+    DeriveAnyClass
+    DeriveGeneric
+    DerivingStrategies
+    DerivingVia
+    DuplicateRecordFields
+    FlexibleContexts
+    FlexibleInstances
+    GeneralizedNewtypeDeriving
+    LambdaCase
+    MultiParamTypeClasses
+    OverloadedStrings
+    RecordWildCards
+    ScopedTypeVariables
+    StandaloneDeriving
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+    ViewPatterns
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-deriving-strategies
+    -Wpartial-fields
+    -Wredundant-constraints
+    -Wunused-packages
+
+library
+  import:           common-options
+  hs-source-dirs:   src
+  exposed-modules:
+    BPC.Worker
+    BPC.Worker.Types
+    BPC.Worker.Retry
+    BPC.Worker.Runner
+    BPC.Worker.Dispatch
+    BPC.Worker.Main
+    BPC.Worker.Handlers.ParseFacts
+    BPC.Worker.Handlers.BuildSnapshot
+    BPC.Worker.Handlers.CompilePassport
+    BPC.Worker.Handlers.SignPassport
+    BPC.Worker.Handlers.GenerateQR
+    BPC.Worker.Handlers.ExportPassport
+    BPC.Worker.Handlers.RunRuleTests
+    BPC.Worker.Handlers.DeliverWebhook
+  build-depends:
+    , aeson            >=2.0  && <2.3
+    , async            >=2.2  && <2.3
+    , base             >=4.18 && <5
+    , base64-bytestring >=1.2 && <1.3
+    , bytestring       >=0.11 && <0.13
+    , containers       >=0.6  && <0.8
+    , cryptonite       >=0.30 && <0.35
+    , deepseq          >=1.4  && <1.6
+    , http-client      >=0.7  && <0.8
+    , http-client-tls  >=0.3  && <0.4
+    , http-types       >=0.12 && <0.13
+    , memory           >=0.18 && <0.19
+    , mtl              >=2.2  && <2.4
+    , postgresql-simple >=0.6 && <0.8
+    , qrcode-core      >=0.9  && <1.0
+    , JuicyPixels      >=3.3  && <3.4
+    , resource-pool    >=0.4  && <0.5
+    , text             >=2.0  && <2.2
+    , time             >=1.12 && <1.15
+    , transformers     >=0.5  && <0.7
+    , uuid             >=1.3  && <1.4
+    , bpc-core
+    , bpc-db
+
+executable bpc-worker
+  import:           common-options
+  main-is:          Main.hs
+  hs-source-dirs:   app
+  build-depends:
+    , base             >=4.18 && <5
+    , bpc-worker
+    , bpc-db
+    , text             >=2.0  && <2.2
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N
+
+test-suite unit
+  import:           common-options
+  type:             exitcode-stdio-1.0
+  main-is:          Spec.hs
+  hs-source-dirs:   test/unit
+  other-modules:
+    BPC.Worker.RunnerSpec
+    BPC.Worker.RetrySpec
+    BPC.Worker.DispatchSpec
+    BPC.Worker.Handlers.ParseFactsSpec
+    BPC.Worker.Handlers.BuildSnapshotSpec
+    BPC.Worker.Handlers.CompilePassportSpec
+    BPC.Worker.Handlers.SignPassportSpec
+    BPC.Worker.Handlers.GenerateQRSpec
+    BPC.Worker.Handlers.ExportPassportSpec
+    BPC.Worker.Handlers.RunRuleTestsSpec
+    BPC.Worker.Handlers.DeliverWebhookSpec
+  build-depends:
+    , base             >=4.18 && <5
+    , bytestring       >=0.11 && <0.13
+    , hspec            >=2.10 && <2.12
+    , QuickCheck       >=2.14 && <2.16
+    , text             >=2.0  && <2.2
+    , time             >=1.12 && <1.15
+    , uuid             >=1.3  && <1.4
+    , bpc-worker
+    , bpc-core
+    , bpc-db
+  build-tool-depends:
+    hspec-discover:hspec-discover
+
+test-suite integration
+  import:           common-options
+  type:             exitcode-stdio-1.0
+  main-is:          Spec.hs
+  hs-source-dirs:   test/integration
+  other-modules:
+    BPC.Worker.E2ESpec
+    BPC.Worker.ConcurrencySpec
+  build-depends:
+    , base             >=4.18 && <5
+    , bytestring       >=0.11 && <0.13
+    , hspec            >=2.10 && <2.12
+    , postgresql-simple >=0.6 && <0.8
+    , resource-pool    >=0.4  && <0.5
+    , text             >=2.0  && <2.2
+    , uuid             >=1.3  && <1.4
+    , async            >=2.2  && <2.3
+    , bpc-worker
+    , bpc-core
+    , bpc-db
+  build-tool-depends:
+    hspec-discover:hspec-discover
