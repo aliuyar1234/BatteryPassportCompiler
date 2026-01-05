@@ -33,6 +33,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Data.UUID (UUID)
+import Data.Word (Word8)
 import Network.HTTP.Types (status401, status403)
 import Network.Wai (Middleware, Request, requestHeaders, responseLBS, pathInfo)
 

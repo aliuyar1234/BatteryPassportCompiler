@@ -36,6 +36,8 @@ import Database.PostgreSQL.Simple (Connection, Only(..), SqlError)
 import qualified Database.PostgreSQL.Simple as PG
 import GHC.Generics (Generic)
 
+import Data.Word (Word8)
+
 import BPC.DB.Error (FactError(..))
 import BPC.DB.Repos.Events (TenantId)
 

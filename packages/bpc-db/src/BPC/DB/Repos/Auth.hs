@@ -56,6 +56,7 @@ import Data.Time (UTCTime, getCurrentTime)
 import Data.UUID (UUID)
 import Database.PostgreSQL.Simple (Connection, Only(..), SqlError)
 import qualified Database.PostgreSQL.Simple as PG
+import Data.Word (Word8)
 import GHC.Generics (Generic)
 
 import BPC.DB.Error (AuthError(..))
