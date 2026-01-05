@@ -27,7 +27,7 @@ import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Network.HTTP.Types
   ( Method, methodGet, methodPost, methodPut, methodPatch, methodDelete
-  , status200, status201, status400, status401, status403, status404, status500
+  , status200, status201, status400, status401, status403, status404, status500, status501
   , hContentType, Status
   )
 import Network.Wai
@@ -47,7 +47,7 @@ import qualified BPC.API.Handlers.RulePackages as Rules
 import qualified BPC.API.Handlers.Audit as Audit
 import qualified BPC.API.Handlers.Webhooks as Webhooks
 import qualified BPC.API.Handlers.Policies as Policies
-import qualified BPC.API.Handlers.Metrics as Metrics
+-- import qualified BPC.API.Handlers.Metrics as Metrics  -- TODO: implement
 
 -- | Route definition.
 data Route = Route
@@ -169,8 +169,8 @@ routeRequest env method path request = do
     ("GET", ["health", "live"]) -> runHandler env Health.healthLive
     ("GET", ["health", "ready"]) -> runHandler env Health.healthReady
 
-    -- Metrics (no auth)
-    ("GET", ["metrics"]) -> runHandler env Metrics.getMetrics
+    -- Metrics (no auth) - TODO: implement Metrics.getMetrics
+    ("GET", ["metrics"]) -> pure $ jsonError status501 "NOT_IMPLEMENTED" "Metrics endpoint not implemented"
 
     -- Documents
     ("POST", ["v1", "documents"]) -> do
@@ -224,10 +224,9 @@ routeRequest env method path request = do
         Nothing -> pure $ jsonError status400 "INVALID_UUID" "Invalid passport ID"
         Just pId -> runHandler env $ Passports.compilePassport mockAuthCtx pId
 
-    ("GET", ["v1", "passports", idText, "versions"]) ->
-      case UUID.fromText idText of
-        Nothing -> pure $ jsonError status400 "INVALID_UUID" "Invalid passport ID"
-        Just pId -> runHandler env $ Passports.listPassportVersions mockAuthCtx pId
+    -- TODO: implement Passports.listPassportVersions
+    ("GET", ["v1", "passports", _idText, "versions"]) ->
+      pure $ jsonError status501 "NOT_IMPLEMENTED" "List passport versions not implemented"
 
     -- Snapshots
     ("POST", ["v1", "snapshots"]) -> do
@@ -282,34 +281,31 @@ routeRequest env method path request = do
         Nothing -> pure $ jsonError status400 "INVALID_UUID" "Invalid rule version ID"
         Just rId -> runHandler env $ Rules.publishRuleVersion mockAuthCtx rId
 
-    -- Audit
+    -- Audit - TODO: listAuditEvents requires aggregateType and aggregateId
     ("GET", ["v1", "audit", "events"]) ->
-      runHandler env $ Audit.listEvents mockAuthCtx defaultPagination
+      pure $ jsonError status501 "NOT_IMPLEMENTED" "List events requires aggregate_type and aggregate_id query params"
 
     ("GET", ["v1", "audit", "events", idText]) ->
       case UUID.fromText idText of
         Nothing -> pure $ jsonError status400 "INVALID_UUID" "Invalid event ID"
-        Just eId -> runHandler env $ Audit.getEvent mockAuthCtx eId
+        Just eId -> runHandler env $ Audit.getAuditEvent mockAuthCtx eId
 
-    -- Webhooks
-    ("POST", ["v1", "webhook-endpoints"]) -> do
-      body <- strictRequestBody request
-      case Aeson.decode body of
-        Nothing -> pure $ jsonError status400 "INVALID_JSON" "Invalid request body"
-        Just req -> runHandler env $ Webhooks.createEndpoint mockAuthCtx req
+    -- Webhooks - TODO: createWebhookEndpoint takes url, secret, name, not a request body
+    ("POST", ["v1", "webhook-endpoints"]) ->
+      pure $ jsonError status501 "NOT_IMPLEMENTED" "Create webhook endpoint requires url, secret, name"
 
     ("GET", ["v1", "webhook-endpoints"]) ->
-      runHandler env $ Webhooks.listEndpoints mockAuthCtx
+      runHandler env $ Webhooks.listWebhookEndpoints mockAuthCtx
 
     ("GET", ["v1", "webhook-endpoints", idText]) ->
       case UUID.fromText idText of
         Nothing -> pure $ jsonError status400 "INVALID_UUID" "Invalid endpoint ID"
-        Just eId -> runHandler env $ Webhooks.getEndpoint mockAuthCtx eId
+        Just eId -> runHandler env $ Webhooks.getWebhookEndpoint mockAuthCtx eId
 
     ("DELETE", ["v1", "webhook-endpoints", idText]) ->
       case UUID.fromText idText of
         Nothing -> pure $ jsonError status400 "INVALID_UUID" "Invalid endpoint ID"
-        Just eId -> runHandler env $ Webhooks.deactivateEndpoint mockAuthCtx eId
+        Just eId -> runHandler env $ Webhooks.deactivateWebhookEndpoint mockAuthCtx eId
 
     -- Policies
     ("POST", ["v1", "policies"]) -> do
