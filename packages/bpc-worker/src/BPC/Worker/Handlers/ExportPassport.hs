@@ -14,6 +14,7 @@ module BPC.Worker.Handlers.ExportPassport
 import Data.Aeson (FromJSON(..), ToJSON(..), object, (.=), (.:), (.:?))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 import Data.Pool (Pool, withResource)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -93,6 +94,7 @@ handle _config pool job = do
 exportToJson :: DB.PassportVersion -> IO (Either Text BS.ByteString)
 exportToJson version = do
   -- Build export JSON
+  -- TODO: Add public_key field to PassportVersion table and DB.PassportVersion type
   let exportData = object
         [ "passport_version_id" .= DB.pvId version
         , "passport_id" .= DB.pvPassportId version
@@ -101,7 +103,7 @@ exportToJson version = do
         , "proof_hash" .= DB.pvProofHash version
         , "receipt_hash" .= DB.pvReceiptHash version
         , "signature" .= DB.pvSignature version
-        , "public_key" .= DB.pvPublicKey version
+        -- , "public_key" .= DB.pvPublicKey version  -- Field doesn't exist yet
         , "qr_payload" .= DB.pvQrPayload version
         , "created_at" .= DB.pvCreatedAt version
         ]

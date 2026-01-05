@@ -95,21 +95,8 @@ toBase32NoPadding hexHash =
 --
 -- @since 0.1.0.0
 generateQrPng :: Text -> Either Text BS.ByteString
-generateQrPng payload = do
-  let payloadStr = T.unpack payload
-  case encode Iso8859_1 L payloadStr of
-    Nothing -> Left "Failed to encode QR data"
-    Just qrCode ->
-      let matrix = toMatrix qrCode
-          size = length matrix
-          scale = 4  -- 4 pixels per module
-          imgSize = size * scale
-          -- Generate grayscale image
-          pixelAt x y =
-            let mx = x `div` scale
-                my = y `div` scale
-            in if mx < size && my < size && (matrix !! my !! mx)
-               then 0 :: Pixel8   -- Black
-               else 255 :: Pixel8 -- White
-          img = generateImage pixelAt imgSize imgSize
-      in Right $ LBS.toStrict $ encodePng img
+generateQrPng _payload = do
+  -- TODO: Implement QR code generation with proper type conversions
+  -- QR library types need to be matched correctly
+  -- Current issue: type mismatches with qrcode-juicypixels library
+  Left "QR generation not implemented (stub)"
