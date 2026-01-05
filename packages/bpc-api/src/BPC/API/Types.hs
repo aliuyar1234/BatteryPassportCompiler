@@ -28,7 +28,7 @@ module BPC.API.Types
 
     -- * Replay
   , ReplayResult(..)
-  , ReplayMismatch(..)
+  , ReplayMismatchInfo(..)
   ) where
 
 import Data.Aeson (FromJSON(..), ToJSON(..), Value, object, (.=), (.:), (.:?))
@@ -248,7 +248,7 @@ instance ToJSON AcceptedResponse where
 data ReplayResult = ReplayResult
   { rrVerified :: Bool
   -- ^ True if all hashes match
-  , rrMismatches :: [ReplayMismatch]
+  , rrMismatches :: [ReplayMismatchInfo]
   -- ^ List of mismatches (empty if verified)
   }
   deriving stock (Show, Eq, Generic)
@@ -260,7 +260,7 @@ instance ToJSON ReplayResult where
     ]
 
 -- | Single mismatch in replay verification.
-data ReplayMismatch = ReplayMismatch
+data ReplayMismatchInfo = ReplayMismatchInfo
   { rmField :: Text
   -- ^ Field that mismatched
   , rmExpected :: Text
@@ -270,8 +270,8 @@ data ReplayMismatch = ReplayMismatch
   }
   deriving stock (Show, Eq, Generic)
 
-instance ToJSON ReplayMismatch where
-  toJSON ReplayMismatch{..} = object
+instance ToJSON ReplayMismatchInfo where
+  toJSON ReplayMismatchInfo{..} = object
     [ "field" .= rmField
     , "expected" .= rmExpected
     , "actual" .= rmActual

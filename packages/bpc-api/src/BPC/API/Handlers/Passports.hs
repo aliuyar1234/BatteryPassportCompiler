@@ -26,7 +26,7 @@ import GHC.Generics (Generic)
 import BPC.API.App (AppM, withPool)
 import BPC.API.Error (AppError(..))
 import BPC.API.Types (AuthContext(..), Permission(..), CursorPage(..), CreatedResponse(..),
-                       AcceptedResponse(..), ReplayResult(..), ReplayMismatch(..),
+                       AcceptedResponse(..), ReplayResult(..), ReplayMismatchInfo(..),
                        PaginationParams(..), Cursor(..), encodeCursor)
 import BPC.API.Middleware.Auth (requirePermission)
 import qualified BPC.DB as DB
