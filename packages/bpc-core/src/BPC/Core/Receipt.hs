@@ -182,7 +182,3 @@ derivePublicKey (Ed25519PrivateKey privKeyBytes) =
       let pk = Ed25519.toPublic sk
       in Right $ Ed25519PublicKey $ convert pk
     CryptoFailed _ -> Left "Invalid private key"
-
--- Convert Ed25519.Signature to ByteString
-instance Eq Ed25519.Signature where
-  -- This needs proper implementation based on cryptonite version

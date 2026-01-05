@@ -27,26 +27,26 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 
 import BPC.Core.Rules.AST
-import BPC.Core.Rules.Error (ParseError (..))
+import qualified BPC.Core.Rules.Error as E
 import BPC.Core.Rules.Lexer
 
 -- | Parse DSL source code into a Module.
-parseSource :: Text -> Either ParseError Module
+parseSource :: Text -> Either E.ParseError Module
 parseSource input = case parse (sc *> pModule <* eof) "<input>" input of
-  Left err -> Left $ ParseError
-    { parseErrorLine = 1  -- TODO: Extract from error bundle
-    , parseErrorColumn = 1
-    , parseErrorMessage = T.pack $ errorBundlePretty err
+  Left err -> Left $ E.ParseError
+    { E.parseErrorLine = 1  -- TODO: Extract from error bundle
+    , E.parseErrorColumn = 1
+    , E.parseErrorMessage = T.pack $ errorBundlePretty err
     }
   Right m -> Right m
 
 -- | Parse DSL source from a file path (pure, file read happens outside).
-parseSourceFile :: FilePath -> Text -> Either ParseError Module
+parseSourceFile :: FilePath -> Text -> Either E.ParseError Module
 parseSourceFile path input = case parse (sc *> pModule <* eof) path input of
-  Left err -> Left $ ParseError
-    { parseErrorLine = 1
-    , parseErrorColumn = 1
-    , parseErrorMessage = T.pack $ errorBundlePretty err
+  Left err -> Left $ E.ParseError
+    { E.parseErrorLine = 1
+    , E.parseErrorColumn = 1
+    , E.parseErrorMessage = T.pack $ errorBundlePretty err
     }
   Right m -> Right m
 

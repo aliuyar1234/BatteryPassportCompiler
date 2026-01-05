@@ -141,14 +141,12 @@ typecheckExpr env fenv (ULet (Identifier name) value body) = do
 typecheckExpr env fenv (UIf cond thenBranch elseBranch) = do
   condTy <- typecheckExpr env fenv cond
   case condTy of
-    SomeExpr STyBool _ -> pure ()
+    SomeExpr STyBool _ -> Right ()
     _ -> Left $ TypeMismatch "Bool" "non-Bool" "if condition"
   thenTy <- typecheckExpr env fenv thenBranch
-  elseTy <- typecheckExpr env fenv elseBranch
+  _elseTy <- typecheckExpr env fenv elseBranch
   -- Check branches have same type (simplified)
   pure thenTy  -- TODO: proper type unification
-  where
-    _ = elseTy  -- silence unused warning
 typecheckExpr env fenv (UAssert cond _errCode _msg) = do
   condTy <- typecheckExpr env fenv cond
   case condTy of
