@@ -45,6 +45,7 @@ import BPC.Core.Hash (sha256Hex)
 -- Cryptographic imports (using cryptonite)
 import qualified Crypto.PubKey.Ed25519 as Ed25519
 import Crypto.Error (CryptoFailable(..))
+import Data.ByteArray (convert)
 
 -- | Input for building a receipt.
 data ReceiptInput = ReceiptInput
@@ -157,7 +158,7 @@ signReceiptHash (Ed25519PrivateKey privKeyBytes) hashHex = do
   let publicKey = Ed25519.toPublic secretKey
   let sig = Ed25519.sign secretKey publicKey hashBytes
 
-  Right $ Signature $ BS.pack $ map fromIntegral $ BS.unpack $ Ed25519.unSignature sig
+  Right $ Signature $ convert sig
   where
     -- Helper to get raw bytes from signature
 
@@ -179,8 +180,7 @@ derivePublicKey (Ed25519PrivateKey privKeyBytes) =
   case Ed25519.secretKey privKeyBytes of
     CryptoPassed sk ->
       let pk = Ed25519.toPublic sk
-          pkBytes = BS.pack $ map fromIntegral $ BS.unpack $ Ed25519.unPublicKey pk
-      in Right $ Ed25519PublicKey pkBytes
+      in Right $ Ed25519PublicKey $ convert pk
     CryptoFailed _ -> Left "Invalid private key"
 
 -- Convert Ed25519.Signature to ByteString
