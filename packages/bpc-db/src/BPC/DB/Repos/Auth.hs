@@ -343,7 +343,7 @@ verifyApiKey conn plaintextKey = do
   rows <- PG.query conn
     "SELECT tenant_id, actor_id, revoked_at, expires_at \
     \FROM api_keys WHERE prefix = ? AND key_hash = ?"
-    (prefix, keyHash)
+    (prefix, keyHash) :: IO [(UUID, UUID, Maybe UTCTime, Maybe UTCTime)]
 
   case rows of
     [] -> pure $ Left AUTH_API_KEY_INVALID
