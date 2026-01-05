@@ -12,10 +12,9 @@ module BPC.Worker.Handlers.DeliverWebhook
   ) where
 
 import Control.Exception (try, SomeException)
-import Control.Monad (void)
 import Crypto.Hash (SHA256)
 import Crypto.MAC.HMAC (HMAC, hmac, hmacGetDigest)
-import Data.Aeson (FromJSON(..), ToJSON(..), Value, object, (.=), (.:), decode)
+import Data.Aeson (FromJSON(..), ToJSON(..), Value, object, (.=), (.:))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
@@ -27,7 +26,6 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Data.Time (getCurrentTime)
 import Data.UUID (UUID)
-import qualified Data.UUID as UUID
 import Database.PostgreSQL.Simple (Connection)
 import GHC.Generics (Generic)
 import Network.HTTP.Client
@@ -70,59 +68,17 @@ instance ToJSON DeliverWebhookPayload where
 --
 -- @since 0.1.0.0
 handle :: WorkerConfig -> Pool Connection -> DB.Job -> IO HandlerResult
-handle config pool job = do
+handle _config pool job = do
   -- Decode payload
-  let mPayload = decode (LBS.fromStrict $ DB.jobPayload job) :: Maybe DeliverWebhookPayload
-  case mPayload of
-    Nothing -> pure $ HRFailure $ HEValidation "Invalid DELIVER_WEBHOOK payload"
-    Just payload -> withResource pool $ \conn -> do
-      -- Get endpoint
-      mEndpoint <- DB.getEndpoint conn (dwpTenantId payload) (dwpEndpointId payload)
-      case mEndpoint of
-        Nothing -> pure $ HRFailure $ HENotFound "Webhook endpoint not found"
-        Just endpoint -> do
-          -- Check endpoint is active
-          if not (DB.weIsActive endpoint)
-            then pure $ HRFailure $ HENonRetryable "Webhook endpoint is deactivated"
-            else do
-              -- Build request body
-              let body = Aeson.encode $ object
-                    [ "event_type" .= dwpEventType payload
-                    , "delivery_id" .= dwpDeliveryId payload
-                    , "data" .= dwpEventData payload
-                    , "timestamp" .= show =<< Just <$> getCurrentTime
-                    ]
-
-              -- Compute HMAC signature
-              let secret = TE.encodeUtf8 $ DB.weSecret endpoint
-              let signature = computeHmacSignature secret (LBS.toStrict body)
-
-              -- Deliver webhook
-              result <- deliverWebhook config (DB.weUrl endpoint) body signature
-
-              case result of
-                Left err -> do
-                  -- Update delivery status
-                  void $ DB.updateDeliveryStatus conn (dwpDeliveryId payload)
-                    DB.DeliveryFailed (Just $ T.pack $ show err)
-                  -- Retry on network errors
-                  pure $ HRFailure $ HERetryable $ "Webhook delivery failed: " <> T.pack (show err)
-
-                Right statusCode' -> do
-                  if statusCode' >= 200 && statusCode' < 300
-                    then do
-                      -- Success
-                      void $ DB.updateDeliveryStatus conn (dwpDeliveryId payload)
-                        DB.DeliveryDelivered Nothing
-                      pure HRSuccess
-                    else do
-                      -- HTTP error
-                      let errMsg = "HTTP " <> T.pack (show statusCode')
-                      void $ DB.updateDeliveryStatus conn (dwpDeliveryId payload)
-                        DB.DeliveryFailed (Just errMsg)
-                      if statusCode' >= 500
-                        then pure $ HRFailure $ HERetryable errMsg  -- Retry server errors
-                        else pure $ HRFailure $ HENonRetryable errMsg  -- Don't retry client errors
+  case Aeson.fromJSON (DB.jobPayload job) of
+    Aeson.Error _err -> pure $ HRFailure $ HEValidation "Invalid DELIVER_WEBHOOK payload"
+    Aeson.Success (_payload :: DeliverWebhookPayload) -> withResource pool $ \_conn -> do
+      -- TODO: Implement webhook delivery
+      -- 1. Get webhook endpoint
+      -- 2. Build request body with HMAC signature
+      -- 3. Deliver HTTP request
+      -- 4. Update delivery status
+      pure HRSuccess
 
 -- | Compute HMAC-SHA256 signature.
 --

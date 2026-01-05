@@ -16,16 +16,15 @@ module BPC.Worker.Handlers.Retention
   , deleteDocumentVersionsOlderThan
   ) where
 
-import Control.Monad (void, when)
+import Control.Monad (void)
 import Data.Aeson (object, (.=))
 import qualified Data.Aeson as Aeson
 import Data.Pool (Pool, withResource)
 import Data.Text (Text)
-import qualified Data.Text as T
 import Data.Time (UTCTime, getCurrentTime, addUTCTime, nominalDay)
 import Data.UUID (UUID)
 import qualified Data.UUID.V4 as UUID
-import Database.PostgreSQL.Simple (Connection, Only(..), execute, query)
+import Database.PostgreSQL.Simple (Connection, Only(..), execute)
 import GHC.Generics (Generic)
 
 import qualified BPC.DB as DB

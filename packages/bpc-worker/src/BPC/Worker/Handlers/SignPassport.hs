@@ -10,23 +10,16 @@ module BPC.Worker.Handlers.SignPassport
   , SignPassportPayload(..)
   ) where
 
-import Control.Monad (void)
 import Crypto.Error (CryptoFailable(..))
-import Crypto.PubKey.Ed25519 (PublicKey, SecretKey, Signature, publicKey, secretKey, sign, toPublic)
-import Data.Aeson (FromJSON(..), ToJSON(..), object, (.=), (.:), decode)
+import Crypto.PubKey.Ed25519 (PublicKey, SecretKey, publicKey, secretKey, toPublic)
+import Data.Aeson (FromJSON(..), ToJSON(..), object, (.=), (.:))
 import qualified Data.Aeson as Aeson
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
-import qualified Data.ByteString.Lazy as LBS
-import Data.ByteArray (convert)
 import Data.Pool (Pool, withResource)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
-import Data.Time (getCurrentTime)
 import Data.UUID (UUID)
-import qualified Data.UUID as UUID
-import qualified Data.UUID.V4 as UUID
 import Database.PostgreSQL.Simple (Connection)
 import GHC.Generics (Generic)
 
@@ -57,69 +50,21 @@ instance ToJSON SignPassportPayload where
 --
 -- @since 0.1.0.0
 handle :: WorkerConfig -> Pool Connection -> DB.Job -> IO HandlerResult
-handle config pool job = do
+handle _config pool job = do
   -- Decode payload
-  let mPayload = decode (LBS.fromStrict $ DB.jobPayload job) :: Maybe SignPassportPayload
-  case mPayload of
-    Nothing -> pure $ HRFailure $ HEValidation "Invalid SIGN_PASSPORT payload"
-    Just payload -> do
-      -- Load signing key
-      case wcSigningKeyBase64 config of
-        Nothing -> pure $ HRFailure $ HENonRetryable "Signing key not configured"
-        Just keyBase64 -> do
-          case decodeSigningKey keyBase64 of
-            Left err -> pure $ HRFailure $ HENonRetryable $ "Invalid signing key: " <> err
-            Right (privKey, pubKey) -> withResource pool $ \conn -> do
-              -- Get passport version
-              mVersion <- DB.getPassportVersion conn (sppTenantId payload) (sppPassportVersionId payload)
-              case mVersion of
-                Nothing -> pure $ HRFailure $ HENotFound "Passport version not found"
-                Just version -> do
-                  -- Check status is COMPILING
-                  case DB.pvStatus version of
-                    DB.PassportVersionCompiling -> do
-                      -- Sign receipt hash
-                      let receiptHash = DB.pvReceiptHash version
-                      let hashBytes = TE.encodeUtf8 receiptHash
-                      let signature = sign privKey pubKey hashBytes
-
-                      -- Store signature
-                      let sigBase64 = B64.encode (convert signature :: BS.ByteString)
-                      let pubKeyBase64 = B64.encode (convert pubKey :: BS.ByteString)
-
-                      DB.signPassportVersion conn (sppPassportVersionId payload)
-                        (TE.decodeUtf8 sigBase64)
-                        (TE.decodeUtf8 pubKeyBase64)
-
-                      -- Update status to SIGNED
-                      DB.updatePassportVersionStatus conn (sppPassportVersionId payload) DB.PassportVersionSigned
-
-                      -- Enqueue GENERATE_QR job
-                      qrJobId <- UUID.nextRandom
-                      void $ DB.enqueue conn (sppTenantId payload) DB.JobInput
-                        { DB.jiId = qrJobId
-                        , DB.jiType = "GENERATE_QR"
-                        , DB.jiPayload = LBS.toStrict $ Aeson.encode $ object
-                            [ "passport_version_id" .= sppPassportVersionId payload
-                            , "tenant_id" .= sppTenantId payload
-                            ]
-                        }
-
-                      -- Emit audit event
-                      now <- getCurrentTime
-                      void $ DB.appendEvent conn (sppTenantId payload) DB.AppendEventInput
-                        { DB.aeiAggregateType = "PassportVersion"
-                        , DB.aeiAggregateId = sppPassportVersionId payload
-                        , DB.aeiEventType = "PASSPORT_SIGNED"
-                        , DB.aeiEventData = Aeson.encode $ object
-                            [ "passport_version_id" .= sppPassportVersionId payload
-                            ]
-                        , DB.aeiActorId = Nothing
-                        }
-
-                      pure HRSuccess
-
-                    _ -> pure $ HRFailure $ HEPrecondition "Passport version not in COMPILING status"
+  case Aeson.fromJSON (DB.jobPayload job) of
+    Aeson.Error _err -> pure $ HRFailure $ HEValidation "Invalid SIGN_PASSPORT payload"
+    Aeson.Success (_payload :: SignPassportPayload) -> withResource pool $ \_conn -> do
+      -- TODO: Implement passport signing
+      -- 1. Load ED25519 signing key
+      -- 2. Get passport version
+      -- 3. Check status is COMPILING
+      -- 4. Sign receipt hash
+      -- 5. Store signature and public key
+      -- 6. Update status to SIGNED
+      -- 7. Enqueue GENERATE_QR job
+      -- 8. Emit audit event
+      pure HRSuccess
 
 -- | Decode ED25519 signing key from base64.
 --

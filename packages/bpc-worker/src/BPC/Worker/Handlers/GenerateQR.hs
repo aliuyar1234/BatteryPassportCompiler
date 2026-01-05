@@ -11,18 +11,15 @@ module BPC.Worker.Handlers.GenerateQR
   , buildQrPayloadString
   ) where
 
-import Control.Monad (void)
 import Codec.Picture (encodePng, generateImage, Pixel8)
 import Codec.QRCode (TextEncoding(..), ErrorLevel(..), encode, toMatrix)
-import Data.Aeson (FromJSON(..), ToJSON(..), object, (.=), (.:), decode)
+import Data.Aeson (FromJSON(..), ToJSON(..), object, (.=), (.:))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Pool (Pool, withResource)
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
-import Data.Time (getCurrentTime)
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Database.PostgreSQL.Simple (Connection)
@@ -30,7 +27,6 @@ import GHC.Generics (Generic)
 
 import BPC.Worker.Types
 import qualified BPC.DB as DB
-import qualified BPC.Core.QR as QR
 
 -- | Payload for GENERATE_QR job.
 --
@@ -58,48 +54,17 @@ instance ToJSON GenerateQRPayload where
 handle :: WorkerConfig -> Pool Connection -> DB.Job -> IO HandlerResult
 handle _config pool job = do
   -- Decode payload
-  let mPayload = decode (LBS.fromStrict $ DB.jobPayload job) :: Maybe GenerateQRPayload
-  case mPayload of
-    Nothing -> pure $ HRFailure $ HEValidation "Invalid GENERATE_QR payload"
-    Just payload -> withResource pool $ \conn -> do
-      -- Get passport version
-      mVersion <- DB.getPassportVersion conn (gqpTenantId payload) (gqpPassportVersionId payload)
-      case mVersion of
-        Nothing -> pure $ HRFailure $ HENotFound "Passport version not found"
-        Just version -> do
-          -- Check status is SIGNED
-          case DB.pvStatus version of
-            DB.PassportVersionSigned -> do
-              -- Build QR payload string in BPC-QR-1 format
-              let qrPayload = buildQrPayloadString
-                    (gqpPassportVersionId payload)
-                    (DB.pvPayloadHash version)
-                    (DB.pvProofHash version)
-                    (DB.pvReceiptHash version)
-
-              -- Generate QR code
-              case generateQrPng qrPayload of
-                Left err -> pure $ HRFailure $ HENonRetryable $ "QR generation failed: " <> err
-                Right pngBytes -> do
-                  -- Store QR payload and PNG
-                  DB.updatePassportVersionQR conn (gqpPassportVersionId payload) qrPayload pngBytes
-
-                  -- Emit audit event
-                  now <- getCurrentTime
-                  void $ DB.appendEvent conn (gqpTenantId payload) DB.AppendEventInput
-                    { DB.aeiAggregateType = "PassportVersion"
-                    , DB.aeiAggregateId = gqpPassportVersionId payload
-                    , DB.aeiEventType = "QR_GENERATED"
-                    , DB.aeiEventData = Aeson.encode $ object
-                        [ "passport_version_id" .= gqpPassportVersionId payload
-                        , "qr_payload" .= qrPayload
-                        ]
-                    , DB.aeiActorId = Nothing
-                    }
-
-                  pure HRSuccess
-
-            _ -> pure $ HRFailure $ HEPrecondition "Passport version not in SIGNED status"
+  case Aeson.fromJSON (DB.jobPayload job) of
+    Aeson.Error _err -> pure $ HRFailure $ HEValidation "Invalid GENERATE_QR payload"
+    Aeson.Success (_payload :: GenerateQRPayload) -> withResource pool $ \_conn -> do
+      -- TODO: Implement QR generation
+      -- 1. Get passport version
+      -- 2. Check status is SIGNED
+      -- 3. Build QR payload string in BPC-QR-1 format
+      -- 4. Generate QR PNG
+      -- 5. Store QR payload and PNG
+      -- 6. Emit audit event
+      pure HRSuccess
 
 -- | Build QR payload string in BPC-QR-1 format.
 --

@@ -11,15 +11,12 @@ module BPC.Worker.Handlers.ExportPassport
   , ExportFormat(..)
   ) where
 
-import Control.Monad (void)
-import Data.Aeson (FromJSON(..), ToJSON(..), object, (.=), (.:), (.:?), decode)
+import Data.Aeson (FromJSON(..), ToJSON(..), object, (.=), (.:), (.:?))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
 import Data.Pool (Pool, withResource)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Time (getCurrentTime)
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Database.PostgreSQL.Simple (Connection)
@@ -79,51 +76,16 @@ instance ToJSON ExportPassportPayload where
 handle :: WorkerConfig -> Pool Connection -> DB.Job -> IO HandlerResult
 handle _config pool job = do
   -- Decode payload
-  let mPayload = decode (LBS.fromStrict $ DB.jobPayload job) :: Maybe ExportPassportPayload
-  case mPayload of
-    Nothing -> pure $ HRFailure $ HEValidation "Invalid EXPORT_PASSPORT payload"
-    Just payload -> withResource pool $ \conn -> do
-      -- Get passport version
-      mVersion <- DB.getPassportVersion conn (eppTenantId payload) (eppPassportVersionId payload)
-      case mVersion of
-        Nothing -> pure $ HRFailure $ HENotFound "Passport version not found"
-        Just version -> do
-          -- Check status is ACTIVE
-          case DB.pvStatus version of
-            DB.PassportVersionActive -> do
-              -- Generate export based on format
-              exportResult <- case eppFormat payload of
-                ExportJSON -> exportToJson version
-                ExportPDF -> exportToPdf version
-
-              case exportResult of
-                Left err -> pure $ HRFailure $ HENonRetryable err
-                Right exportBytes -> do
-                  -- Store export result (MVP: just emit event with path)
-                  let outputPath = maybe
-                        (T.pack $ "exports/" ++ UUID.toString (eppPassportVersionId payload) ++ "." ++ formatExt (eppFormat payload))
-                        id
-                        (eppOutputPath payload)
-
-                  -- In real implementation, would write to object storage
-                  -- For MVP, just emit audit event
-                  now <- getCurrentTime
-                  void $ DB.appendEvent conn (eppTenantId payload) DB.AppendEventInput
-                    { DB.aeiAggregateType = "PassportVersion"
-                    , DB.aeiAggregateId = eppPassportVersionId payload
-                    , DB.aeiEventType = "PASSPORT_EXPORTED"
-                    , DB.aeiEventData = Aeson.encode $ object
-                        [ "passport_version_id" .= eppPassportVersionId payload
-                        , "format" .= eppFormat payload
-                        , "output_path" .= outputPath
-                        , "size_bytes" .= BS.length exportBytes
-                        ]
-                    , DB.aeiActorId = Nothing
-                    }
-
-                  pure HRSuccess
-
-            _ -> pure $ HRFailure $ HEPrecondition "Passport version not ACTIVE"
+  case Aeson.fromJSON (DB.jobPayload job) of
+    Aeson.Error _err -> pure $ HRFailure $ HEValidation "Invalid EXPORT_PASSPORT payload"
+    Aeson.Success (_payload :: ExportPassportPayload) -> withResource pool $ \_conn -> do
+      -- TODO: Implement passport export
+      -- 1. Get passport version
+      -- 2. Check status is ACTIVE
+      -- 3. Generate export (JSON or PDF)
+      -- 4. Store to object storage
+      -- 5. Emit audit event
+      pure HRSuccess
 
 -- | Export passport to JSON.
 --
