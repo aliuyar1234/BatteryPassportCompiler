@@ -4,6 +4,7 @@ module BPC.Worker.Handlers.GenerateQRSpec (spec) where
 
 import Test.Hspec
 import Data.UUID (nil)
+import Data.List (isPrefixOf)
 
 import BPC.Worker.Handlers.GenerateQR
 
@@ -18,8 +19,6 @@ spec = do
       let payload = buildQrPayloadString nil "hash1" "hash2" "hash3"
       -- Format: BPC1|pv=<uuid>|ph=<b32>|pr=<b32>|rh=<b32>
       payload `shouldSatisfy` \p -> "BPC1|" `isPrefixOf` p
-      where
-        isPrefixOf prefix str = take (length prefix) str == prefix
 
     it "uses base32 without padding for hashes" $ do
       pending

@@ -27,7 +27,8 @@ import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Network.HTTP.Types
   ( Method, methodGet, methodPost, methodPut, methodPatch, methodDelete
-  , status200, status201, status400, status401, status403, status404, status500, status501
+  , status200, status201, status400, status401, status403, status404, status409
+  , status422, status429, status500, status501, status503
   , hContentType, Status
   )
 import Network.Wai
@@ -340,19 +341,38 @@ runHandlerBS env action = do
 -- | Convert AppError to HTTP response.
 errorToResponse :: AppError -> Response
 errorToResponse = \case
+  -- Authentication errors (401)
+  Unauthorized msg -> jsonError status401 "UNAUTHORIZED" msg
+  ApiKeyInvalid -> jsonError status401 "API_KEY_INVALID" "Invalid API key"
+  ApiKeyRevoked -> jsonError status401 "API_KEY_REVOKED" "API key has been revoked"
+  ApiKeyExpired -> jsonError status401 "API_KEY_EXPIRED" "API key has expired"
+  -- Authorization errors (403)
+  Forbidden msg -> jsonError status403 "FORBIDDEN" msg
+  PermissionDenied resource -> jsonError status403 "PERMISSION_DENIED" $
+    "Permission denied for resource: " <> resource
+  -- Not found errors (404)
   NotFound msg -> jsonError status404 "NOT_FOUND" msg
   DocumentNotFound _ -> jsonError status404 "DOCUMENT_NOT_FOUND" "Document not found"
   SnapshotNotFound _ -> jsonError status404 "SNAPSHOT_NOT_FOUND" "Snapshot not found"
   PassportNotFound _ -> jsonError status404 "PASSPORT_NOT_FOUND" "Passport not found"
   RulePackageNotFound _ -> jsonError status404 "RULE_PACKAGE_NOT_FOUND" "Rule package not found"
-  ApiKeyInvalid -> jsonError status401 "API_KEY_INVALID" "Invalid API key"
-  ApiKeyExpired -> jsonError status401 "API_KEY_EXPIRED" "API key has expired"
-  PermissionDenied resource -> jsonError status403 "PERMISSION_DENIED" $
-    "Permission denied for resource: " <> resource
-  ValidationError fields -> jsonError status400 "VALIDATION_ERROR" $
+  -- Conflict errors (409)
+  Conflict msg -> jsonError status409 "CONFLICT" msg
+  SnapshotSealed _ -> jsonError status409 "SNAPSHOT_SEALED" "Snapshot is sealed"
+  IdempotencyConflict key -> jsonError status409 "IDEMPOTENCY_CONFLICT" $
+    "Idempotency conflict for key: " <> key
+  ReplayMismatch msg -> jsonError status409 "REPLAY_MISMATCH" msg
+  -- Validation errors (422)
+  ValidationError fields -> jsonError status422 "VALIDATION_ERROR" $
     T.intercalate ", " [f <> ": " <> m | (f, m) <- fields]
-  Conflict msg -> jsonError status400 "CONFLICT" msg
+  InvalidRequest msg -> jsonError status422 "INVALID_REQUEST" msg
+  -- Rate limit errors (429)
+  RateLimitExceeded -> jsonError status429 "RATE_LIMIT_EXCEEDED" "Rate limit exceeded"
+  -- Internal errors (500)
   InternalError msg -> jsonError status500 "INTERNAL_ERROR" msg
+  DatabaseError msg -> jsonError status500 "DATABASE_ERROR" msg
+  -- Service unavailable (503)
+  ServiceUnavailable msg -> jsonError status503 "SERVICE_UNAVAILABLE" msg
 
 -- | Create a JSON error response.
 jsonError :: Status -> Text -> Text -> Response
