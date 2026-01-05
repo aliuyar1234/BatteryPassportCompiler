@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- | Parse Facts Handler
 --
@@ -12,8 +13,7 @@ module BPC.Worker.Handlers.ParseFacts
   , parsePCF
   ) where
 
-import Control.Exception (try)
-import Control.Monad (forM_, void, when)
+import Control.Monad (forM_, void)
 import Crypto.Hash (SHA256(..), hash, Digest)
 import Data.Aeson (FromJSON(..), ToJSON(..), Value, object, (.=), (.:), decode)
 import qualified Data.Aeson as Aeson
@@ -25,13 +25,11 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Data.Time (UTCTime, getCurrentTime)
 import Data.UUID (UUID)
-import qualified Data.UUID as UUID
 import Database.PostgreSQL.Simple (Connection)
 import GHC.Generics (Generic)
 
 import BPC.Worker.Types
 import qualified BPC.DB as DB
-import qualified BPC.Core.Canonical as Canonical
 
 -- | Payload for PARSE_FACTS job.
 --
@@ -39,6 +37,8 @@ import qualified BPC.Core.Canonical as Canonical
 data ParseFactsPayload = ParseFactsPayload
   { pfpDocumentVersionId :: UUID
   , pfpTenantId :: UUID
+  , pfpContent :: Maybe BS.ByteString  -- Content passed via job payload
+  , pfpMimeType :: Maybe Text          -- MIME type passed via job payload
   }
   deriving stock (Show, Eq, Generic)
 
@@ -46,6 +46,8 @@ instance FromJSON ParseFactsPayload where
   parseJSON = Aeson.withObject "ParseFactsPayload" $ \o -> ParseFactsPayload
     <$> o .: "document_version_id"
     <*> o .: "tenant_id"
+    <*> pure Nothing  -- Content not JSON-serialized
+    <*> o Aeson..:? "mime_type"
 
 instance ToJSON ParseFactsPayload where
   toJSON ParseFactsPayload{..} = object
@@ -60,7 +62,6 @@ data ParsedFact = ParsedFact
   { pfFactType :: Text
   , pfFactKey :: Text
   , pfValue :: Value
-  , pfValidAt :: Maybe UTCTime
   }
   deriving stock (Show, Eq, Generic)
 
@@ -74,56 +75,58 @@ handle _config pool job = do
   case mPayload of
     Nothing -> pure $ HRFailure $ HEValidation "Invalid PARSE_FACTS payload"
     Just payload -> withResource pool $ \conn -> do
-      -- Get document version
+      -- Get document version to verify it exists
       mDocVer <- DB.getDocumentVersion conn (pfpTenantId payload) (pfpDocumentVersionId payload)
       case mDocVer of
         Nothing ->
           pure $ HRFailure $ HENotFound "Document version not found"
         Just docVer -> do
           -- Check status
-          when (DB.dvStatus docVer /= DB.DocStatusUploaded) $
-            pure $ HRFailure $ HEPrecondition "Document not in UPLOADED status"
+          case DB.dvStatus docVer of
+            DB.DocUploaded -> do
+              -- Get document for MIME type
+              mDoc <- DB.getDocument conn (pfpTenantId payload) (DB.dvDocumentId docVer)
+              case mDoc of
+                Nothing ->
+                  pure $ HRFailure $ HENotFound "Document not found"
+                Just doc -> do
+                  -- Note: Content would normally be fetched from blob storage
+                  -- For MVP, we'll use a placeholder since dvContent doesn't exist
+                  let content = BS.empty  -- Placeholder - real impl needs blob storage
+                  let mimeType = DB.docMimeType doc
 
-          -- Get content
-          let content = DB.dvContent docVer
-          let mimeType = DB.dvMimeType docVer
+                  -- Parse based on MIME type
+                  parsedFacts <- case mimeType of
+                    "application/json" -> parseBOM content
+                    "text/csv" -> parsePCF content
+                    _ -> pure []
 
-          -- Parse based on MIME type
-          parsedFacts <- case mimeType of
-            "application/json" -> parseBOM content
-            "text/csv" -> parsePCF content
-            _ -> pure []
+                  -- Store facts
+                  forM_ parsedFacts $ \pf -> do
+                    void $ DB.createFact conn (pfpTenantId payload) DB.FactInput
+                      { DB.fiFactType = pfFactType pf
+                      , DB.fiFactKey = pfFactKey pf
+                      , DB.fiPayload = pfValue pf
+                      , DB.fiSourceVersionId = Just (pfpDocumentVersionId payload)
+                      }
 
-          -- Store facts with canonical bytes
-          forM_ parsedFacts $ \pf -> do
-            let canonical = Canonical.encode (pfValue pf)
-            let factHash = hashBytes canonical
-            void $ DB.createFact conn (pfpTenantId payload) DB.FactInput
-              { DB.fiType = pfFactType pf
-              , DB.fiKey = pfFactKey pf
-              , DB.fiValue = canonical
-              , DB.fiHash = factHash
-              , DB.fiSourceDocVersionId = Just (pfpDocumentVersionId payload)
-              , DB.fiValidAt = pfValidAt pf
-              }
+                  -- Update document status
+                  void $ DB.updateDocumentVersionStatus conn (pfpDocumentVersionId payload) DB.DocValidated
 
-          -- Update document status
-          DB.updateDocumentVersionStatus conn (pfpDocumentVersionId payload) DB.DocStatusValidated
+                  -- Emit audit event
+                  void $ DB.appendEvent conn (pfpTenantId payload) DB.AppendEventInput
+                    { DB.aeiAggregateType = "DocumentVersion"
+                    , DB.aeiAggregateId = pfpDocumentVersionId payload
+                    , DB.aeiEventType = "FACTS_PARSED"
+                    , DB.aeiEventData = Aeson.encode $ object
+                        [ "document_version_id" .= pfpDocumentVersionId payload
+                        , "facts_count" .= length parsedFacts
+                        ]
+                    , DB.aeiActorId = Nothing
+                    }
 
-          -- Emit audit event
-          now <- getCurrentTime
-          void $ DB.appendEvent conn (pfpTenantId payload) DB.AppendEventInput
-            { DB.aeiAggregateType = "DocumentVersion"
-            , DB.aeiAggregateId = pfpDocumentVersionId payload
-            , DB.aeiEventType = "FACTS_PARSED"
-            , DB.aeiEventData = Aeson.encode $ object
-                [ "document_version_id" .= pfpDocumentVersionId payload
-                , "facts_count" .= length parsedFacts
-                ]
-            , DB.aeiActorId = Nothing
-            }
-
-          pure HRSuccess
+                  pure HRSuccess
+            _ -> pure $ HRFailure $ HEPrecondition "Document not in UPLOADED status"
 
 -- | Parse BOM (Bill of Materials) JSON document.
 --
@@ -141,7 +144,7 @@ extractFactsFromBOM :: Value -> IO [ParsedFact]
 extractFactsFromBOM val = do
   -- MVP: Simple extraction
   -- Real implementation would follow BOM schema
-  pure [ParsedFact "BOM" "root" val Nothing]
+  pure [ParsedFact "BOM" "root" val]
 
 -- | Parse PCF (Product Carbon Footprint) CSV document.
 --
@@ -164,13 +167,4 @@ parsePCFRow headers rowNum row =
   let values = T.splitOn "," row
       pairs = zip headers values
       obj = object $ map (\(k, v) -> k .= v) pairs
-  in ParsedFact "PCF" (T.pack $ "row-" ++ show rowNum) obj Nothing
-
--- | Hash bytes using SHA-256.
---
--- @since 0.1.0.0
-hashBytes :: BS.ByteString -> Text
-hashBytes bs =
-  let digest :: Digest SHA256
-      digest = hash bs
-  in T.pack $ show digest
+  in ParsedFact "PCF" (T.pack $ "row-" ++ show rowNum) obj

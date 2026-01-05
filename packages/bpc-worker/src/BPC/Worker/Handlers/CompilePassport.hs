@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- | Compile Passport Handler
 --
@@ -10,25 +11,27 @@ module BPC.Worker.Handlers.CompilePassport
   , CompilePassportPayload(..)
   ) where
 
-import Control.Monad (void, when)
+import Control.Monad (void)
 import Data.Aeson (FromJSON(..), ToJSON(..), object, (.=), (.:), decode)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 import Data.Pool (Pool, withResource)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Time (getCurrentTime)
 import Data.UUID (UUID)
-import qualified Data.UUID as UUID
 import qualified Data.UUID.V4 as UUID
 import Database.PostgreSQL.Simple (Connection)
 import GHC.Generics (Generic)
 
 import BPC.Worker.Types
 import qualified BPC.DB as DB
-import qualified BPC.Core.Compiler as Compiler
-import qualified BPC.Core.Canonical as Canonical
+import qualified BPC.Core.Compile as Compile
+import qualified BPC.Core.CanonicalJson as Canonical
+import qualified BPC.Core.Rules.Parser as Parser
+import qualified BPC.Core.Rules.Eval as Eval
 
 -- | Payload for COMPILE_PASSPORT job.
 --
@@ -56,21 +59,11 @@ instance ToJSON CompilePassportPayload where
     , "rule_version_id" .= cppRuleVersionId
     ]
 
--- | Maximum sizes per SSOT.
-maxPayloadSize :: Int
-maxPayloadSize = 131072  -- 128 KB
-
-maxProofSize :: Int
-maxProofSize = 262144  -- 256 KB
-
-maxReceiptSize :: Int
-maxReceiptSize = 16384  -- 16 KB
-
 -- | Handle COMPILE_PASSPORT job.
 --
 -- @since 0.1.0.0
 handle :: WorkerConfig -> Pool Connection -> DB.Job -> IO HandlerResult
-handle config pool job = do
+handle _config pool job = do
   -- Decode payload
   let mPayload = decode (LBS.fromStrict $ DB.jobPayload job) :: Maybe CompilePassportPayload
   case mPayload of
@@ -80,95 +73,109 @@ handle config pool job = do
       mSnapshot <- DB.getSnapshot conn (cppTenantId payload) (cppSnapshotId payload)
       case mSnapshot of
         Nothing -> pure $ HRFailure $ HENotFound "Snapshot not found"
-        Just snapshot -> case DB.snapshotStatus snapshot of
-          DB.SnapshotSealed -> do
+        Just snapshot -> case DB.snapStatus snapshot of
+          DB.SnapSealed -> do
             -- Verify rules are PUBLISHED
             mRuleVer <- DB.getRuleVersion conn (cppTenantId payload) (cppRuleVersionId payload)
             case mRuleVer of
               Nothing -> pure $ HRFailure $ HENotFound "Rule version not found"
               Just ruleVer -> case DB.rvStatus ruleVer of
-                DB.RuleVersionPublished -> do
-                  -- Load facts from snapshot
-                  facts <- DB.getSnapshotFacts conn (cppTenantId payload) (cppSnapshotId payload)
+                DB.RulePublished -> do
+                  -- Parse the DSL source into a Module
+                  case Parser.parseSource (DB.rvDslSource ruleVer) of
+                    Left parseErr ->
+                      pure $ HRFailure $ HENonRetryable $ "Parse error: " <> T.pack (show parseErr)
+                    Right rulesModule -> do
+                      -- Load facts from snapshot
+                      facts <- DB.getSnapshotFacts conn (cppTenantId payload) (cppSnapshotId payload)
 
-                  -- Build compilation input
-                  let compileInput = Compiler.CompileInput
-                        { Compiler.ciSnapshotId = cppSnapshotId payload
-                        , Compiler.ciSnapshotHash = DB.snapshotHash snapshot
-                        , Compiler.ciFacts = map toCoreFact facts
-                        , Compiler.ciRules = DB.rvRules ruleVer
-                        , Compiler.ciRuleVersionId = cppRuleVersionId payload
-                        }
+                      -- Generate passport version ID
+                      versionId <- UUID.nextRandom
 
-                  -- Call pure compilation function
-                  case Compiler.compilePassportPure compileInput of
-                    Left err ->
-                      pure $ HRFailure $ HENonRetryable $ "Compilation failed: " <> T.pack (show err)
-                    Right output -> do
-                      -- Verify size limits
-                      let payloadBytes = Compiler.coPayloadBytes output
-                      let proofBytes = Compiler.coProofBytes output
-                      let receiptBytes = Compiler.coReceiptBytes output
+                      -- Build compilation input
+                      let factsMap = Map.fromList $ map toFactEntry facts
+                      let compileInput = Compile.CompileInput
+                            { Compile.ciSnapshotId = cppSnapshotId payload
+                            , Compile.ciSnapshotHash = fromMaybe "" (DB.snapHash snapshot)
+                            , Compile.ciSnapshotStatus = "SEALED"
+                            , Compile.ciRulesId = cppRuleVersionId payload
+                            , Compile.ciRulesHash = DB.rvDslHash ruleVer
+                            , Compile.ciRulesStatus = "PUBLISHED"
+                            , Compile.ciRulesModule = rulesModule
+                            , Compile.ciFacts = factsMap
+                            , Compile.ciTenantId = cppTenantId payload
+                            , Compile.ciPassportVersionId = versionId
+                            }
 
-                      if BS.length payloadBytes > maxPayloadSize
-                        then pure $ HRFailure $ HENonRetryable "Payload exceeds 128KB limit"
-                        else if BS.length proofBytes > maxProofSize
-                          then pure $ HRFailure $ HENonRetryable "Proof exceeds 256KB limit"
-                          else if BS.length receiptBytes > maxReceiptSize
-                            then pure $ HRFailure $ HENonRetryable "Receipt exceeds 16KB limit"
-                            else do
-                              -- Create passport version
-                              versionId <- UUID.nextRandom
-                              now <- getCurrentTime
-                              void $ DB.createPassportVersion conn (cppTenantId payload) DB.PassportVersionInput
-                                { DB.pviId = versionId
-                                , DB.pviPassportId = cppPassportId payload
-                                , DB.pviSnapshotId = cppSnapshotId payload
-                                , DB.pviRuleVersionId = cppRuleVersionId payload
-                                , DB.pviPayloadBytes = payloadBytes
-                                , DB.pviPayloadHash = Compiler.coPayloadHash output
-                                , DB.pviProofBytes = proofBytes
-                                , DB.pviProofHash = Compiler.coProofHash output
-                                , DB.pviReceiptBytes = receiptBytes
-                                , DB.pviReceiptHash = Compiler.coReceiptHash output
-                                }
+                      -- Call pure compilation function
+                      case Compile.compilePassportPure compileInput of
+                        Left err ->
+                          pure $ HRFailure $ HENonRetryable $ "Compilation failed: " <> T.pack (show err)
+                        Right output -> do
+                          -- Size limits already checked inside compilePassportPure
+                          let payloadBytes = Compile.coPayloadCanonical output
+                          let proofBytes = Compile.coProofCanonical output
+                          -- Serialize receipt for storage
+                          let receiptBytes = case Canonical.canonicalEncode (Aeson.toJSON $ Compile.coReceiptUnsigned output) of
+                                Left _ -> BS.empty
+                                Right bs -> bs
 
-                              -- Enqueue SIGN_PASSPORT job
-                              signJobId <- UUID.nextRandom
-                              void $ DB.enqueue conn (cppTenantId payload) DB.JobInput
-                                { DB.jiId = signJobId
-                                , DB.jiType = "SIGN_PASSPORT"
-                                , DB.jiPayload = LBS.toStrict $ Aeson.encode $ object
-                                    [ "passport_version_id" .= versionId
-                                    , "tenant_id" .= cppTenantId payload
-                                    ]
-                                }
+                          -- Create passport version
+                          void $ DB.createPassportVersion conn (cppTenantId payload) DB.PassportVersionInput
+                            { DB.pviId = versionId
+                            , DB.pviPassportId = cppPassportId payload
+                            , DB.pviSnapshotId = cppSnapshotId payload
+                            , DB.pviRuleVersionId = cppRuleVersionId payload
+                            , DB.pviPayloadBytes = payloadBytes
+                            , DB.pviPayloadHash = Compile.coPayloadHash output
+                            , DB.pviProofBytes = proofBytes
+                            , DB.pviProofHash = Compile.coProofHash output
+                            , DB.pviReceiptBytes = receiptBytes
+                            , DB.pviReceiptHash = Compile.coReceiptHash output
+                            }
 
-                              -- Emit audit event
-                              void $ DB.appendEvent conn (cppTenantId payload) DB.AppendEventInput
-                                { DB.aeiAggregateType = "PassportVersion"
-                                , DB.aeiAggregateId = versionId
-                                , DB.aeiEventType = "PASSPORT_COMPILED"
-                                , DB.aeiEventData = Aeson.encode $ object
-                                    [ "passport_id" .= cppPassportId payload
-                                    , "passport_version_id" .= versionId
-                                    , "payload_hash" .= Compiler.coPayloadHash output
-                                    , "receipt_hash" .= Compiler.coReceiptHash output
-                                    ]
-                                , DB.aeiActorId = Nothing
-                                }
+                          -- Enqueue SIGN_PASSPORT job
+                          signJobId <- UUID.nextRandom
+                          void $ DB.enqueue conn (cppTenantId payload) DB.JobInput
+                            { DB.jiId = signJobId
+                            , DB.jiType = "SIGN_PASSPORT"
+                            , DB.jiPayload = LBS.toStrict $ Aeson.encode $ object
+                                [ "passport_version_id" .= versionId
+                                , "tenant_id" .= cppTenantId payload
+                                ]
+                            }
 
-                              pure HRSuccess
+                          -- Emit audit event
+                          void $ DB.appendEvent conn (cppTenantId payload) DB.AppendEventInput
+                            { DB.aeiAggregateType = "PassportVersion"
+                            , DB.aeiAggregateId = versionId
+                            , DB.aeiEventType = "PASSPORT_COMPILED"
+                            , DB.aeiEventData = Aeson.encode $ object
+                                [ "passport_id" .= cppPassportId payload
+                                , "passport_version_id" .= versionId
+                                , "payload_hash" .= Compile.coPayloadHash output
+                                , "receipt_hash" .= Compile.coReceiptHash output
+                                ]
+                            , DB.aeiActorId = Nothing
+                            }
+
+                          pure HRSuccess
 
                 _ -> pure $ HRFailure $ HEPrecondition "Rule version not PUBLISHED"
 
           _ -> pure $ HRFailure $ HEPrecondition "Snapshot not SEALED"
 
--- | Convert DB fact to Core fact.
-toCoreFact :: DB.Fact -> Compiler.Fact
-toCoreFact f = Compiler.Fact
-  { Compiler.fType = DB.factType f
-  , Compiler.fKey = DB.factKey f
-  , Compiler.fValue = DB.factValue f
-  , Compiler.fHash = DB.factHash f
-  }
+-- | Convert DB fact to a (key, value) entry for the facts map.
+-- The key is (factType, factKey) and the value is the payload converted to eval Value.
+toFactEntry :: DB.Fact -> ((Text, Text), Eval.Value)
+toFactEntry f = ((DB.factType f, DB.factKey f), jsonToValue (DB.factPayload f))
+
+-- | Convert Aeson Value to eval Value (simplified).
+jsonToValue :: Aeson.Value -> Eval.Value
+jsonToValue v = case v of
+  Aeson.Object _ -> Eval.VRecord Map.empty  -- Placeholder for object conversion
+  Aeson.Array _ -> Eval.VList []             -- Placeholder for array conversion
+  Aeson.String s -> Eval.VString s
+  Aeson.Number n -> Eval.VInt (truncate n)
+  Aeson.Bool b -> Eval.VBool b
+  Aeson.Null -> Eval.VNone

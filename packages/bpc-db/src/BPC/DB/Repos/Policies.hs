@@ -43,7 +43,6 @@ import Database.PostgreSQL.Simple.ToField
 import Database.PostgreSQL.Simple.ToRow
 import GHC.Generics (Generic)
 
-import BPC.Core.Canonical (encode)
 import BPC.DB.Error
 
 -- | Policy effect (ALLOW or DENY).
