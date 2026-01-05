@@ -21,7 +21,7 @@ module BPC.DB.Repos.Passports
   , getPassportByProduct
     -- * Version Operations
   , insertVersion
-  , getVersion
+  , getPassportVersion
   , getVersionsByPassport
   , getActiveVersion
     -- * Lifecycle Operations
@@ -293,12 +293,12 @@ getNextVersionNumber conn tenantId passId = do
   pure $ maxVer + 1
 
 -- | Get a passport version by ID.
-getVersion
+getPassportVersion
   :: Connection
   -> TenantId
   -> PassportVersionId
   -> IO (Maybe PassportVersion)
-getVersion conn tenantId versionId = do
+getPassportVersion conn tenantId versionId = do
   rows <- PG.query conn
     "SELECT id, passport_id, tenant_id, version_number, snapshot_id, \
     \       rules_version_id, payload_hash, proof_hash, receipt_hash, \
@@ -358,7 +358,7 @@ activate
   -> PassportVersionId
   -> IO (Either ActivateError ())
 activate conn tenantId versionId = do
-  mVersion <- getVersion conn tenantId versionId
+  mVersion <- getPassportVersion conn tenantId versionId
   case mVersion of
     Nothing -> pure $ Left $ ActivateVersionNotFound versionId
     Just ver
@@ -391,7 +391,7 @@ revoke
   -> PassportVersionId
   -> IO (Either RevokeError ())
 revoke conn tenantId versionId = do
-  mVersion <- getVersion conn tenantId versionId
+  mVersion <- getPassportVersion conn tenantId versionId
   case mVersion of
     Nothing -> pure $ Left $ RevokeVersionNotFound versionId
     Just ver

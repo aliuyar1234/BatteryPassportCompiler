@@ -24,7 +24,7 @@ module BPC.DB.Repos.Rules
   , listPackages
     -- * Version Operations
   , createVersion
-  , getVersion
+  , getRuleVersion
   , getVersionsByPackage
   , getPublishedVersion
     -- * Publish Operations
@@ -339,12 +339,12 @@ getNextVersionNumber conn tenantId pkgId = do
   pure $ maxVer + 1
 
 -- | Get a rule version by ID.
-getVersion
+getRuleVersion
   :: Connection
   -> TenantId
   -> RuleVersionId
   -> IO (Maybe RuleVersion)
-getVersion conn tenantId versionId = do
+getRuleVersion conn tenantId versionId = do
   rows <- PG.query conn
     "SELECT id, package_id, tenant_id, version_number, dsl_source, \
     \       dsl_sha256, tests_sha256, status, published_at, created_at \
@@ -400,7 +400,7 @@ publishVersion
   -> RuleVersionId
   -> IO (Either PublishError ())
 publishVersion conn tenantId versionId = do
-  mVersion <- getVersion conn tenantId versionId
+  mVersion <- getRuleVersion conn tenantId versionId
   case mVersion of
     Nothing -> pure $ Left $ PublishVersionNotFound versionId
     Just ver

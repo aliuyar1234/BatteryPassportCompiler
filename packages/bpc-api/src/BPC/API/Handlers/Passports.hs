@@ -146,7 +146,7 @@ activatePassportVersion ctx versionId = do
   case result of
     Left err -> throwError $ InternalError $ T.pack $ show err
     Right () -> do
-      verResult <- withPool $ \conn -> DB.getVersion conn (acTenantId ctx) versionId
+      verResult <- withPool $ \conn -> DB.getPassportVersion conn (acTenantId ctx) versionId
       case verResult of
         Nothing -> throwError $ NotFound "Passport version"
         Just v -> pure $ toVersionResponse v
@@ -165,7 +165,7 @@ revokePassportVersion ctx versionId = do
   case result of
     Left err -> throwError $ InternalError $ T.pack $ show err
     Right () -> do
-      verResult <- withPool $ \conn -> DB.getVersion conn (acTenantId ctx) versionId
+      verResult <- withPool $ \conn -> DB.getPassportVersion conn (acTenantId ctx) versionId
       case verResult of
         Nothing -> throwError $ NotFound "Passport version"
         Just v -> pure $ PassportVersionResponse

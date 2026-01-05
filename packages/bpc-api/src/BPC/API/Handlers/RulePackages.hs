@@ -116,7 +116,7 @@ publishRuleVersion ctx versionId = do
   case result of
     Left err -> throwError $ InternalError $ T.pack $ show err
     Right () -> do
-      verResult <- withPool $ \conn -> DB.getVersion conn (acTenantId ctx) versionId
+      verResult <- withPool $ \conn -> DB.getRuleVersion conn (acTenantId ctx) versionId
       case verResult of
         Nothing -> throwError $ NotFound "Rule version"
         Just v -> pure $ RuleVersionResponse (DB.rvId v) (DB.rvVersionNumber v) "PUBLISHED" (DB.rvDslHash v) (DB.rvCreatedAt v)

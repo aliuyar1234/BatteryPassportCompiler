@@ -19,7 +19,7 @@ module BPC.DB.Repos.Documents
   , getDocument
   , listDocuments
   , uploadVersion
-  , getVersion
+  , getDocumentVersion
   , getContent
   , getVersionsByDocument
   , updateDocumentStatus
@@ -285,12 +285,12 @@ insertVersion conn tenantId docId verNum contentHash contentSize content uploade
     handleSqlError _ = pure $ Left $ UploadDuplicateHash contentHash
 
 -- | Get a document version by ID.
-getVersion
+getDocumentVersion
   :: Connection
   -> TenantId
   -> DocumentVersionId
   -> IO (Maybe DocumentVersion)
-getVersion conn tenantId versionId = do
+getDocumentVersion conn tenantId versionId = do
   rows <- PG.query conn
     "SELECT id, document_id, tenant_id, version_number, content_hash, \
     \       content_size, status, uploaded_by, created_at \
