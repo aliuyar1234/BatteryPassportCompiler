@@ -50,7 +50,8 @@ instance ToJSON WebhookSubscriptionResponse where
 createWebhookEndpoint :: AuthContext -> Text -> Text -> Text -> AppM CreatedResponse
 createWebhookEndpoint ctx url secret name = do
   requirePermission PermWebhookManage ctx
-  result <- withPool $ \conn -> DB.createEndpoint conn (acTenantId ctx) $ DB.EndpointInput url secret name
+  -- TODO: Get encryption key from config/environment
+  result <- withPool $ \conn -> DB.createEndpoint conn (acTenantId ctx) (DB.EndpointInput url secret name) Nothing
   case result of
     Left err -> throwError $ InternalError "Failed to create webhook endpoint"
     Right endpointId -> pure CreatedResponse { crId = endpointId, crLocation = "/v1/webhook-endpoints/" }
@@ -58,7 +59,8 @@ createWebhookEndpoint ctx url secret name = do
 listWebhookEndpoints :: AuthContext -> AppM [WebhookEndpointResponse]
 listWebhookEndpoints ctx = do
   requirePermission PermWebhookManage ctx
-  endpoints <- withPool $ \conn -> DB.listEndpoints conn (acTenantId ctx)
+  -- TODO: Get encryption key from config/environment
+  endpoints <- withPool $ \conn -> DB.listEndpoints conn (acTenantId ctx) Nothing
   pure $ map toResponse endpoints
   where
     toResponse e = WebhookEndpointResponse (DB.weId e) (DB.weUrl e) (DB.weName e) (DB.weIsActive e) (DB.weCreatedAt e)
@@ -66,7 +68,8 @@ listWebhookEndpoints ctx = do
 getWebhookEndpoint :: AuthContext -> UUID -> AppM WebhookEndpointResponse
 getWebhookEndpoint ctx endpointId = do
   requirePermission PermWebhookManage ctx
-  result <- withPool $ \conn -> DB.getEndpoint conn (acTenantId ctx) endpointId
+  -- TODO: Get encryption key from config/environment
+  result <- withPool $ \conn -> DB.getEndpoint conn (acTenantId ctx) endpointId Nothing
   case result of
     Nothing -> throwError $ NotFound "Webhook endpoint"
     Just e -> pure $ WebhookEndpointResponse (DB.weId e) (DB.weUrl e) (DB.weName e) (DB.weIsActive e) (DB.weCreatedAt e)

@@ -47,12 +47,10 @@ listSnapshots :: AuthContext -> PaginationParams -> AppM (CursorPage SnapshotRes
 listSnapshots ctx params = do
   requirePermission PermSnapshotRead ctx
 
-  -- Parse cursor if provided
+  -- Extract cursor data if provided (ppCursor is already parsed)
   let cursorData = case ppCursor params of
         Nothing -> Nothing
-        Just c -> case parseCursor c of
-          Right cursor -> Just (cursorTimestamp cursor, cursorId cursor)
-          Left _ -> Nothing
+        Just cursor -> Just (cursorTimestamp cursor, cursorId cursor)
 
   -- Fetch one extra item to check if there are more
   let limit = ppLimit params + 1

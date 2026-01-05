@@ -29,7 +29,7 @@ import BPC.API.App (AppM, withPool)
 import BPC.API.Error (AppError(..))
 import BPC.API.Types (AuthContext(..), Permission(..), CursorPage(..),
                        CreatedResponse(..), PaginationParams(..), Cursor(..),
-                       parseCursor, encodeCursor)
+                       encodeCursor)
 import BPC.API.Middleware.Auth (requirePermission)
 import qualified BPC.DB as DB
 
@@ -127,12 +127,10 @@ listDocuments
 listDocuments ctx params = do
   requirePermission PermDocumentRead ctx
 
-  -- Parse cursor if provided
+  -- Extract cursor data if provided (ppCursor is already parsed)
   let cursorData = case ppCursor params of
         Nothing -> Nothing
-        Just c -> case parseCursor c of
-          Right cursor -> Just (cursorTimestamp cursor, cursorId cursor)
-          Left _ -> Nothing
+        Just cursor -> Just (cursorTimestamp cursor, cursorId cursor)
 
   -- Fetch one extra item to check if there are more
   let limit = ppLimit params + 1

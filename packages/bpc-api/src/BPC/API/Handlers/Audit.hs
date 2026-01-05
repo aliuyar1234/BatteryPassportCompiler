@@ -19,7 +19,7 @@ import GHC.Generics (Generic)
 import BPC.API.App (AppM, withPool)
 import BPC.API.Error (AppError(..))
 import BPC.API.Types (AuthContext(..), Permission(..), CursorPage(..),
-                       PaginationParams(..), Cursor(..), parseCursor, encodeCursor)
+                       PaginationParams(..), Cursor(..), encodeCursor)
 import BPC.API.Middleware.Auth (requirePermission)
 import qualified BPC.DB as DB
 
@@ -59,12 +59,10 @@ listAuditEvents ctx aggType aggId params = do
       -- Sort by created_at DESC, id DESC
       let sortedEvents = reverse $ sortOn (\e -> (DB.evCreatedAt e, DB.evId e)) allEvents
 
-      -- Apply cursor filter if provided
+      -- Apply cursor filter if provided (ppCursor is already parsed)
       let filteredEvents = case ppCursor params of
             Nothing -> sortedEvents
-            Just c -> case parseCursor c of
-              Right cursor -> filter (\e -> (DB.evCreatedAt e, DB.evId e) < (cursorTimestamp cursor, cursorId cursor)) sortedEvents
-              Left _ -> sortedEvents
+            Just cursor -> filter (\e -> (DB.evCreatedAt e, DB.evId e) < (cursorTimestamp cursor, cursorId cursor)) sortedEvents
 
       -- Take limit + 1 to check for more
       let limit = ppLimit params + 1

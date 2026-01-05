@@ -19,7 +19,7 @@ import GHC.Generics (Generic)
 import BPC.API.App (AppM, withPool)
 import BPC.API.Error (AppError(..))
 import BPC.API.Types (AuthContext(..), Permission(..), CursorPage(..), CreatedResponse(..),
-                       PaginationParams(..), Cursor(..), parseCursor, encodeCursor)
+                       PaginationParams(..), Cursor(..), encodeCursor)
 import BPC.API.Middleware.Auth (requirePermission)
 import qualified BPC.DB as DB
 
@@ -61,12 +61,10 @@ listFacts ctx factType params = do
   -- Sort by created_at DESC, id DESC
   let sortedFacts = reverse $ sortOn (\f -> (DB.factCreatedAt f, DB.factId f)) allFacts
 
-  -- Apply cursor filter if provided
+  -- Apply cursor filter if provided (ppCursor is already parsed)
   let filteredFacts = case ppCursor params of
         Nothing -> sortedFacts
-        Just c -> case parseCursor c of
-          Right cursor -> filter (\f -> (DB.factCreatedAt f, DB.factId f) < (cursorTimestamp cursor, cursorId cursor)) sortedFacts
-          Left _ -> sortedFacts
+        Just cursor -> filter (\f -> (DB.factCreatedAt f, DB.factId f) < (cursorTimestamp cursor, cursorId cursor)) sortedFacts
 
   -- Take limit + 1 to check for more
   let limit = ppLimit params + 1
